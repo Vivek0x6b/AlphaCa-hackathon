@@ -14,6 +14,7 @@ this entirely for the live autonomous version.
 
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta, time as dtime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -62,10 +63,23 @@ def run_forever():
 
         run_date = datetime.now(EASTERN).date()
         if is_trading_day(run_date):
-            print(f"Re-tuning strategy parameters for {run_date}...")
-            run_retune()
-            print(f"Running agent loop for {run_date}...")
-            run_once()
+            # Each step is its own try/except so a bug or API hiccup on
+            # one day logs and moves on to tomorrow, instead of silently
+            # killing the whole scheduler process (leaving trading dark
+            # for days with nobody noticing).
+            try:
+                print(f"Re-tuning strategy parameters for {run_date}...")
+                run_retune()
+            except Exception:
+                traceback.print_exc()
+                print(f"Re-tune failed for {run_date}, continuing to trading pass.")
+
+            try:
+                print(f"Running agent loop for {run_date}...")
+                run_once()
+            except Exception:
+                traceback.print_exc()
+                print(f"Trading run failed for {run_date}. Will retry tomorrow.")
         else:
             print(f"{run_date} is not a trading day. Skipping.")
 
