@@ -6,6 +6,14 @@ choice in comments here so the thesis stays traceable.
 """
 
 # Liquid, optionable large-caps and ETFs.
+#
+# Widened from the original 7 to 13 on 2026-09-01. The backtest showed
+# roughly one signal every 13 trading days across the original watchlist,
+# which is less than 50/50 odds of anything firing at all during a single
+# ~5-day judging week. This adds more names of the same quality bar
+# (mega-cap, heavily optioned, liquid) rather than loosening the signal
+# logic itself - same validated rules, more opportunities to apply them
+# to, not a different or looser thesis.
 WATCHLIST = [
     "SPY",
     "QQQ",
@@ -14,6 +22,12 @@ WATCHLIST = [
     "MSFT",
     "AMD",
     "TSLA",
+    "GOOGL",
+    "META",
+    "AMZN",
+    "NFLX",
+    "IWM",
+    "DIA",
 ]
 
 # --- Signal parameters ---
