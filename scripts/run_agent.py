@@ -52,38 +52,47 @@ def check_exits(params: dict):
     current_prices = fetch_stock_prices(list(open_trades.keys()))
 
     for ticker, meta in open_trades.items():
-        if ticker not in spreads:
-            # We think we have a trade open, but Alpaca shows no matching
-            # pair of legs (e.g. it was closed manually). Drop our record
-            # of it rather than checking a trade that no longer exists.
-            remove_open_trade(ticker)
-            continue
+        try:
+            if ticker not in spreads:
+                # We think we have a trade open, but Alpaca shows no matching
+                # pair of legs (e.g. it was closed manually). Drop our record
+                # of it rather than checking a trade that no longer exists.
+                remove_open_trade(ticker)
+                continue
 
-        long_leg = spreads[ticker]["long"]
-        short_leg = spreads[ticker]["short"]
+            long_leg = spreads[ticker]["long"]
+            short_leg = spreads[ticker]["short"]
 
-        entry_debit = (float(long_leg.avg_entry_price) - float(short_leg.avg_entry_price)) * 100
-        current_value = (float(long_leg.current_price) - float(short_leg.current_price)) * 100
+            entry_debit = (float(long_leg.avg_entry_price) - float(short_leg.avg_entry_price)) * 100
+            current_value = (float(long_leg.current_price) - float(short_leg.current_price)) * 100
 
-        decision = evaluate_exit(
-            ticker=ticker,
-            direction=meta["direction"],
-            entry_debit=entry_debit,
-            current_value=current_value,
-            current_price=current_prices[ticker],
-            breakout_level=meta["breakout_level"],
-            profit_target_pct=params["profit_target_pct"],
-            stop_loss_pct=params["stop_loss_pct"],
-        )
-        log_entry("exit_check", decision)
-        print(f"[{ticker}] {decision.reasoning}")
+            decision = evaluate_exit(
+                ticker=ticker,
+                direction=meta["direction"],
+                entry_debit=entry_debit,
+                current_value=current_value,
+                current_price=current_prices[ticker],
+                breakout_level=meta["breakout_level"],
+                profit_target_pct=params["profit_target_pct"],
+                stop_loss_pct=params["stop_loss_pct"],
+            )
+            log_entry("exit_check", decision)
+            print(f"[{ticker}] {decision.reasoning}")
 
-        if decision.should_exit:
-            qty = abs(int(float(long_leg.qty)))
-            close_debit_spread(long_leg.symbol, short_leg.symbol, qty)
-            remove_open_trade(ticker)
-            log_entry("trade_exit", decision)
-            print(f"[{ticker}] closed both legs.")
+            if decision.should_exit:
+                qty = abs(int(float(long_leg.qty)))
+                close_debit_spread(long_leg.symbol, short_leg.symbol, qty)
+                remove_open_trade(ticker)
+                log_entry("trade_exit", decision)
+                print(f"[{ticker}] closed both legs.")
+        except Exception as exc:
+            # One position's API hiccup must not stop us from checking
+            # every other open position's exit conditions the same run -
+            # missing a stop loss or profit target is worse than missing
+            # a new entry.
+            print(f"[{ticker}] error while checking exit, skipping this "
+                  f"position for today: {exc}")
+            log_entry("ticker_error", {"ticker": ticker, "error": str(exc)})
 
 
 def run_once():
@@ -118,83 +127,92 @@ def run_once():
     already_open_tickers = set(load_open_trades()) | set(get_open_debit_spreads())
 
     for result in results:
-        log_entry("signal_check", result)
-        print(f"[{result.ticker}] fired={result.fired}: {result.reasoning}")
+        try:
+            log_entry("signal_check", result)
+            print(f"[{result.ticker}] fired={result.fired}: {result.reasoning}")
 
-        if not result.fired:
-            continue
+            if not result.fired:
+                continue
 
-        if result.ticker in already_open_tickers:
-            print(f"[{result.ticker}] signal fired but this ticker already has "
-                  f"an open position. Skipping to avoid doubling up.")
-            continue
+            if result.ticker in already_open_tickers:
+                print(f"[{result.ticker}] signal fired but this ticker already has "
+                      f"an open position. Skipping to avoid doubling up.")
+                continue
 
-        if result.direction == "put" and not PUT_TRADING_ENABLED:
-            print(f"[{result.ticker}] put signal fired but put trading is disabled "
-                  f"(backtesting found puts underperform calls). Not trading it.")
-            continue
+            if result.direction == "put" and not PUT_TRADING_ENABLED:
+                print(f"[{result.ticker}] put signal fired but put trading is disabled "
+                      f"(backtesting found puts underperform calls). Not trading it.")
+                continue
 
-        option_chain = fetch_option_chain(
-            result.ticker,
-            result.direction,
-            min_days_to_expiry=params["min_days_to_expiry"],
-            max_days_to_expiry=params["max_days_to_expiry"],
-        )
+            option_chain = fetch_option_chain(
+                result.ticker,
+                result.direction,
+                min_days_to_expiry=params["min_days_to_expiry"],
+                max_days_to_expiry=params["max_days_to_expiry"],
+            )
 
-        spread = select_debit_spread(
-            result.ticker,
-            result.direction,
-            option_chain,
-            long_leg_delta_range=params["long_leg_delta_range"],
-            short_leg_delta_range=params["short_leg_delta_range"],
-            min_days_to_expiry=params["min_days_to_expiry"],
-            max_days_to_expiry=params["max_days_to_expiry"],
-        )
-        if spread is None:
-            print(f"[{result.ticker}] signal fired but no suitable spread found.")
-            continue
+            spread = select_debit_spread(
+                result.ticker,
+                result.direction,
+                option_chain,
+                long_leg_delta_range=params["long_leg_delta_range"],
+                short_leg_delta_range=params["short_leg_delta_range"],
+                min_days_to_expiry=params["min_days_to_expiry"],
+                max_days_to_expiry=params["max_days_to_expiry"],
+            )
+            if spread is None:
+                print(f"[{result.ticker}] signal fired but no suitable spread found.")
+                continue
 
-        log_entry("spread_selected", spread)
-        print(f"[{result.ticker}] {spread.reasoning}")
+            log_entry("spread_selected", spread)
+            print(f"[{result.ticker}] {spread.reasoning}")
 
-        quotes = fetch_option_quotes([spread.long_leg.symbol, spread.short_leg.symbol])
-        # Buying the long leg: use the ask (the price we'd actually pay).
-        # Selling the short leg: use the bid (the price we'd actually receive).
-        long_leg_price = quotes[spread.long_leg.symbol][1]
-        short_leg_price = quotes[spread.short_leg.symbol][0]
+            quotes = fetch_option_quotes([spread.long_leg.symbol, spread.short_leg.symbol])
+            # Buying the long leg: use the ask (the price we'd actually pay).
+            # Selling the short leg: use the bid (the price we'd actually receive).
+            long_leg_price = quotes[spread.long_leg.symbol][1]
+            short_leg_price = quotes[spread.short_leg.symbol][0]
 
-        plan = size_position(
-            spread,
-            account_equity=get_account_equity(),
-            long_leg_price=long_leg_price,
-            short_leg_price=short_leg_price,
-            open_position_count=open_position_count,
-        )
-        if plan is None:
-            print(f"[{result.ticker}] spread found but sizing rejected it "
-                  f"(position limit reached or risk budget too small).")
-            continue
+            plan = size_position(
+                spread,
+                account_equity=get_account_equity(),
+                long_leg_price=long_leg_price,
+                short_leg_price=short_leg_price,
+                open_position_count=open_position_count,
+            )
+            if plan is None:
+                print(f"[{result.ticker}] spread found but sizing rejected it "
+                      f"(position limit reached or risk budget too small).")
+                continue
 
-        log_entry("trade_entry", plan)
-        print(f"[{result.ticker}] {plan.reasoning}")
+            log_entry("trade_entry", plan)
+            print(f"[{result.ticker}] {plan.reasoning}")
 
-        payload = build_order_payload(plan)
-        log_entry("order_payload_built", payload)
+            payload = build_order_payload(plan)
+            log_entry("order_payload_built", payload)
 
-        order = place_debit_spread_order(plan)
-        log_entry("order_submitted", {"order_id": str(order.id), "status": str(order.status)})
-        print(f"[{result.ticker}] order submitted, id={order.id}, status={order.status}")
+            order = place_debit_spread_order(plan)
+            log_entry("order_submitted", {"order_id": str(order.id), "status": str(order.status)})
+            print(f"[{result.ticker}] order submitted, id={order.id}, status={order.status}")
 
-        # Alpaca can return an order that was never actually accepted
-        # (rejected/canceled/expired) without raising an exception. Only
-        # count it toward the same-run position limit, and only remember
-        # it for later exit-checking, if it's actually live.
-        if order.status in (OrderStatus.REJECTED, OrderStatus.CANCELED, OrderStatus.EXPIRED):
-            print(f"[{result.ticker}] order was not accepted (status={order.status}), "
-                  f"not counting it toward the position limit.")
-        else:
-            save_open_trade(result.ticker, result.direction, result.breakout_level)
-            open_position_count += 1
+            # Alpaca can return an order that was never actually accepted
+            # (rejected/canceled/expired) without raising an exception. Only
+            # count it toward the same-run position limit, and only remember
+            # it for later exit-checking, if it's actually live.
+            if order.status in (OrderStatus.REJECTED, OrderStatus.CANCELED, OrderStatus.EXPIRED):
+                print(f"[{result.ticker}] order was not accepted (status={order.status}), "
+                      f"not counting it toward the position limit.")
+            else:
+                save_open_trade(result.ticker, result.direction, result.breakout_level)
+                open_position_count += 1
+        except Exception as exc:
+            # A single ticker's API hiccup (rate limit, transient network
+            # error) must not abort the scan for every ticker after it in
+            # the watchlist - that would silently blind the agent to real
+            # signals on the remaining names for the rest of the day.
+            print(f"[{result.ticker}] error while processing, skipping this "
+                  f"ticker for today: {exc}")
+            log_entry("ticker_error", {"ticker": result.ticker, "error": str(exc)})
 
 
 if __name__ == "__main__":
