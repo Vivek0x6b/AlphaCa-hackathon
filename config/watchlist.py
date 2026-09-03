@@ -73,7 +73,14 @@ MAX_DAYS_TO_EXPIRY = 28
 # --- Risk parameters ---
 
 # Fraction of account equity risked per trade.
-POSITION_SIZE_PCT = 0.02
+#
+# Raised from 0.02 to 0.08 on 2026-09-03, with about a day and a half left
+# in the hackathon window. At 2%, a winning trade barely moves total P&L
+# in the time remaining. This only affects trades placed from here forward
+# (the already-open AAPL spread keeps its original size) - still capped by
+# MAX_CONCURRENT_POSITIONS below, and it's paper capital, so the downside
+# of being wrong is a worse-looking number, not real risk.
+POSITION_SIZE_PCT = 0.08
 
 # Maximum number of concurrent open positions.
 MAX_CONCURRENT_POSITIONS = 3
