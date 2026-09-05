@@ -134,12 +134,14 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
     opening a naked position. Setting position_intent directly fixes it.
 
     Closes the short leg first, then the long leg, as further defense in
-    depth (closing a short can never increase short exposure). Waits
-    briefly between the two orders: confirmed live that submitting the
-    long leg's close immediately after the short leg's close can still
-    be rejected as uncovered, because the account hasn't finished
-    processing the short leg's close yet. A couple seconds is enough
-    for the position update to land before the second order is sent.
+    depth (closing a short can never increase short exposure). Waits for
+    the short leg's close order to actually FILL before submitting the
+    long leg's close: confirmed live that a fixed short sleep isn't
+    enough - the short position still legitimately exists (and covers
+    the long) until that order fills, so submitting the long leg's close
+    too early gets rejected as uncovered. This matters especially outside
+    active market hours, when a resting limit order may not fill for a
+    while (or at all, until the next session).
 
     Prices both legs to be immediately marketable (sell the long at its
     bid, buy back the short at its ask) since an exit should execute
@@ -151,7 +153,7 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
 
     client = get_trading_client()
 
-    client.submit_order(
+    short_close_order = client.submit_order(
         LimitOrderRequest(
             symbol=short_symbol,
             qty=qty,
@@ -162,7 +164,14 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
             position_intent=PositionIntent.BUY_TO_CLOSE,
         )
     )
-    time.sleep(2)
+
+    filled = _wait_for_fill(client, short_close_order.id)
+    if not filled:
+        print(f"Short leg close for {short_symbol} did not fill in time; "
+              f"leaving the long leg open rather than risk an uncovered "
+              f"rejection. It'll be retried next run.")
+        return
+
     client.submit_order(
         LimitOrderRequest(
             symbol=long_symbol,
@@ -174,3 +183,19 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
             position_intent=PositionIntent.SELL_TO_CLOSE,
         )
     )
+
+
+def _wait_for_fill(client: TradingClient, order_id, timeout_seconds: int = 30, poll_seconds: int = 2) -> bool:
+    """Poll an order until it's filled or the timeout elapses."""
+    from alpaca.trading.enums import OrderStatus
+
+    waited = 0.0
+    while waited < timeout_seconds:
+        order = client.get_order_by_id(order_id)
+        if order.status == OrderStatus.FILLED:
+            return True
+        if order.status in (OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED):
+            return False
+        time.sleep(poll_seconds)
+        waited += poll_seconds
+    return False
