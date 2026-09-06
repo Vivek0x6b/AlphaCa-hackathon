@@ -119,9 +119,15 @@ def get_open_debit_spreads() -> dict[str, dict[str, Position]]:
     return {ticker: legs for ticker, legs in grouped.items() if "long" in legs and "short" in legs}
 
 
-def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
+def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> bool:
     """
     Close both legs of a debit spread by symbol.
+
+    Returns True only if both legs' close orders were actually submitted
+    (the short leg filled and the long leg's close order went out). The
+    caller must check this before treating the spread as closed - a
+    False return means the position is still open and needs rechecking
+    next run.
 
     Uses explicit closing orders (submit_order with position_intent set)
     rather than Alpaca's close_position() convenience method. Confirmed
@@ -170,7 +176,7 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
         print(f"Short leg close for {short_symbol} did not fill in time; "
               f"leaving the long leg open rather than risk an uncovered "
               f"rejection. It'll be retried next run.")
-        return
+        return False
 
     client.submit_order(
         LimitOrderRequest(
@@ -183,6 +189,7 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> None:
             position_intent=PositionIntent.SELL_TO_CLOSE,
         )
     )
+    return True
 
 
 def _wait_for_fill(client: TradingClient, order_id, timeout_seconds: int = 30, poll_seconds: int = 2) -> bool:

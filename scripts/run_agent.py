@@ -32,6 +32,7 @@ from src.broker import (
     close_debit_spread,
 )
 from src.signals import scan_watchlist
+from src.news_veto import check_news_veto
 from src.options_selector import select_debit_spread
 from src.execution import size_position, build_order_payload
 from src.position_manager import evaluate_exit
@@ -81,10 +82,15 @@ def check_exits(params: dict):
 
             if decision.should_exit:
                 qty = abs(int(float(long_leg.qty)))
-                close_debit_spread(long_leg.symbol, short_leg.symbol, qty)
-                remove_open_trade(ticker)
-                log_entry("trade_exit", decision)
-                print(f"[{ticker}] closed both legs.")
+                closed = close_debit_spread(long_leg.symbol, short_leg.symbol, qty)
+                if closed:
+                    remove_open_trade(ticker)
+                    log_entry("trade_exit", decision)
+                    print(f"[{ticker}] closed both legs.")
+                else:
+                    print(f"[{ticker}] close did not complete this run "
+                          f"(short leg pending); still tracked as open, "
+                          f"will retry next run.")
         except Exception as exc:
             # One position's API hiccup must not stop us from checking
             # every other open position's exit conditions the same run -
@@ -142,6 +148,13 @@ def run_once():
             if result.direction == "put" and not PUT_TRADING_ENABLED:
                 print(f"[{result.ticker}] put signal fired but put trading is disabled "
                       f"(backtesting found puts underperform calls). Not trading it.")
+                continue
+
+            vetoed, veto_reasoning = check_news_veto(result.ticker, result.direction)
+            log_entry("news_veto_check", {"ticker": result.ticker, "vetoed": vetoed, "reasoning": veto_reasoning})
+            print(f"[{result.ticker}] news check: {veto_reasoning}")
+            if vetoed:
+                print(f"[{result.ticker}] signal fired but news check vetoed the trade. Skipping.")
                 continue
 
             option_chain = fetch_option_chain(
