@@ -152,13 +152,21 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> bool:
     Prices both legs to be immediately marketable (sell the long at its
     bid, buy back the short at its ask) since an exit should execute
     promptly rather than wait for a better price, unlike an entry.
+
+    Cancels any stale resting close order on a leg before resubmitting -
+    this function can get called again on a later run (e.g. the previous
+    attempt's short leg never filled), and a limit price quoted days ago
+    may no longer be anywhere near the market. Always cancelling and
+    repricing fresh means a stuck close order can't block forever; it
+    just gets replaced with a current, marketable one on every attempt.
     """
+    client = get_trading_client()
+
     quotes = fetch_option_quotes([long_symbol, short_symbol])
     long_bid = quotes[long_symbol][0]
     short_ask = quotes[short_symbol][1]
 
-    client = get_trading_client()
-
+    _cancel_open_orders(client, short_symbol)
     short_close_order = client.submit_order(
         LimitOrderRequest(
             symbol=short_symbol,
@@ -175,9 +183,10 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> bool:
     if not filled:
         print(f"Short leg close for {short_symbol} did not fill in time; "
               f"leaving the long leg open rather than risk an uncovered "
-              f"rejection. It'll be retried next run.")
+              f"rejection. It'll be retried (with a fresh price) next run.")
         return False
 
+    _cancel_open_orders(client, long_symbol)
     client.submit_order(
         LimitOrderRequest(
             symbol=long_symbol,
@@ -190,6 +199,17 @@ def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> bool:
         )
     )
     return True
+
+
+def _cancel_open_orders(client: TradingClient, symbol: str) -> None:
+    """Cancel any still-open order on this symbol, so a fresh one can be
+    submitted without "insufficient qty" from a stale one holding it."""
+    from alpaca.trading.requests import GetOrdersRequest
+    from alpaca.trading.enums import QueryOrderStatus
+
+    open_orders = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol]))
+    for order in open_orders:
+        client.cancel_order_by_id(order.id)
 
 
 def _wait_for_fill(client: TradingClient, order_id, timeout_seconds: int = 30, poll_seconds: int = 2) -> bool:
