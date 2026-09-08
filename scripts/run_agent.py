@@ -28,8 +28,10 @@ from src.broker import (
     get_account_equity,
     get_open_spread_count,
     get_open_debit_spreads,
+    get_orphaned_option_legs,
     place_debit_spread_order,
     close_debit_spread,
+    close_single_leg,
 )
 from src.signals import scan_watchlist
 from src.news_veto import check_news_veto
@@ -50,14 +52,32 @@ def check_exits(params: dict):
         return
 
     spreads = get_open_debit_spreads()
+    orphans = get_orphaned_option_legs()
     current_prices = fetch_stock_prices(list(open_trades.keys()))
 
     for ticker, meta in open_trades.items():
         try:
             if ticker not in spreads:
-                # We think we have a trade open, but Alpaca shows no matching
-                # pair of legs (e.g. it was closed manually). Drop our record
-                # of it rather than checking a trade that no longer exists.
+                if ticker in orphans:
+                    # A single leg is still open - the other leg's close
+                    # completed (e.g. a resting order finally filled) but
+                    # this one never went out. This is NOT "already
+                    # closed" - it's real, unmanaged risk. Close it before
+                    # dropping tracking.
+                    leg = orphans[ticker]
+                    qty = abs(int(float(leg.qty)))
+                    closed = close_single_leg(leg.symbol, qty, leg.side)
+                    if closed:
+                        remove_open_trade(ticker)
+                        print(f"[{ticker}] closed leftover leg {leg.symbol}.")
+                    else:
+                        print(f"[{ticker}] leftover leg {leg.symbol} close "
+                              f"did not fill this run; still tracked, will "
+                              f"retry next run.")
+                    continue
+
+                # No position at all for this ticker - genuinely closed
+                # (e.g. both legs closed manually). Safe to drop.
                 remove_open_trade(ticker)
                 continue
 

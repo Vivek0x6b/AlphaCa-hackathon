@@ -119,6 +119,65 @@ def get_open_debit_spreads() -> dict[str, dict[str, Position]]:
     return {ticker: legs for ticker, legs in grouped.items() if "long" in legs and "short" in legs}
 
 
+def get_orphaned_option_legs() -> dict[str, Position]:
+    """
+    Tickers with exactly one open option leg, not a matched pair.
+
+    This happens when a spread close completes one leg (e.g. the short
+    leg's close order finally fills after sitting unfilled for days) but
+    the other leg's close never went out in the same run - the position
+    is real and still open, just no longer visible to
+    get_open_debit_spreads() since that requires both legs. Confirmed
+    live: this is NOT the same as "both legs already closed" and must
+    not be treated that way - a lone leftover leg still needs to be
+    closed, not silently dropped from tracking.
+    """
+    client = get_trading_client()
+    positions = client.get_all_positions()
+    option_positions = [p for p in positions if p.asset_class == AssetClass.US_OPTION]
+
+    grouped: dict[str, list[Position]] = {}
+    for position in option_positions:
+        ticker = _underlying_from_occ_symbol(position.symbol)
+        grouped.setdefault(ticker, []).append(position)
+
+    return {ticker: legs[0] for ticker, legs in grouped.items() if len(legs) == 1}
+
+
+def close_single_leg(symbol: str, qty: int, side: PositionSide) -> bool:
+    """
+    Close one standalone option leg (not part of a matched spread).
+
+    side is the position's current side (LONG closes via SELL_TO_CLOSE,
+    SHORT closes via BUY_TO_CLOSE). Same cancel-stale-then-reprice and
+    wait-for-fill approach as close_debit_spread(), for the same reason:
+    a limit order quoted once can go stale if it doesn't fill right away.
+    """
+    client = get_trading_client()
+    quotes = fetch_option_quotes([symbol])
+    bid, ask = quotes[symbol]
+
+    _cancel_open_orders(client, symbol)
+
+    if side == PositionSide.LONG:
+        order_side, limit_price, intent = OrderSide.SELL, bid, PositionIntent.SELL_TO_CLOSE
+    else:
+        order_side, limit_price, intent = OrderSide.BUY, ask, PositionIntent.BUY_TO_CLOSE
+
+    order = client.submit_order(
+        LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=order_side,
+            type="limit",
+            time_in_force=TimeInForce.DAY,
+            limit_price=limit_price,
+            position_intent=intent,
+        )
+    )
+    return _wait_for_fill(client, order.id)
+
+
 def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> bool:
     """
     Close both legs of a debit spread by symbol.
