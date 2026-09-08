@@ -20,8 +20,9 @@ STOP_LOSS_PCT = 0.50      # close at -50% of debit paid
 class ExitDecision:
     symbol_group: str  # ticker or spread identifier
     should_exit: bool
-    reason: Literal["profit_target", "stop_loss", "thesis_invalidated", "hold", None]
+    reason: Literal["profit_target", "trailing_stop", "stop_loss", "thesis_invalidated", "hold", None]
     reasoning: str
+    peak_value: float = 0.0  # highest current_value seen since entry, for trailing-stop tracking
 
 
 def evaluate_exit(
@@ -33,6 +34,8 @@ def evaluate_exit(
     breakout_level: float,
     profit_target_pct: float = PROFIT_TARGET_PCT,
     stop_loss_pct: float = STOP_LOSS_PCT,
+    peak_value: float | None = None,
+    trailing_stop_pct: float | None = None,
 ) -> ExitDecision:
     """
     Decide whether an open spread position should be closed.
@@ -52,19 +55,48 @@ def evaluate_exit(
     profit_target_pct, stop_loss_pct: default to this module's constants.
         Overridable so the backtester (and the autonomous re-tuner) can
         test different thresholds without touching live config.
+    peak_value: the highest current_value seen since entry, tracked by
+        the caller and passed back in each check. None on the first
+        check (peak starts at entry_debit). Ignored unless
+        trailing_stop_pct is set.
+    trailing_stop_pct: if set, replaces the flat profit_target exit with
+        a trailing one - once the position's peak gain reaches
+        profit_target_pct, it's left open to keep running and only
+        closed if it pulls back this fraction from its peak. None (the
+        default) keeps the original behavior: close immediately at
+        profit_target_pct, no trailing.
     """
+    peak_value = max(peak_value if peak_value is not None else entry_debit, current_value)
     pnl_pct = (current_value - entry_debit) / entry_debit if entry_debit else 0.0
+    peak_pnl_pct = (peak_value - entry_debit) / entry_debit if entry_debit else 0.0
 
-    if pnl_pct >= profit_target_pct:
-        return ExitDecision(
-            symbol_group=ticker,
-            should_exit=True,
-            reason="profit_target",
-            reasoning=(
-                f"{ticker} spread is up {pnl_pct:.0%}, at or above the "
-                f"{profit_target_pct:.0%} profit target. Closing."
-            ),
-        )
+    if trailing_stop_pct is None:
+        if pnl_pct >= profit_target_pct:
+            return ExitDecision(
+                symbol_group=ticker,
+                should_exit=True,
+                reason="profit_target",
+                reasoning=(
+                    f"{ticker} spread is up {pnl_pct:.0%}, at or above the "
+                    f"{profit_target_pct:.0%} profit target. Closing."
+                ),
+                peak_value=peak_value,
+            )
+    elif peak_pnl_pct >= profit_target_pct:
+        drawdown_from_peak = (peak_value - current_value) / peak_value if peak_value else 0.0
+        if drawdown_from_peak >= trailing_stop_pct:
+            return ExitDecision(
+                symbol_group=ticker,
+                should_exit=True,
+                reason="trailing_stop",
+                reasoning=(
+                    f"{ticker} spread peaked at +{peak_pnl_pct:.0%} and has "
+                    f"pulled back {drawdown_from_peak:.0%} from that peak, "
+                    f"at or beyond the {trailing_stop_pct:.0%} trailing "
+                    f"stop. Closing to lock in the gain."
+                ),
+                peak_value=peak_value,
+            )
 
     if pnl_pct <= -stop_loss_pct:
         return ExitDecision(
@@ -76,6 +108,7 @@ def evaluate_exit(
                 f"-{stop_loss_pct:.0%} stop loss. Closing to limit further "
                 f"loss."
             ),
+            peak_value=peak_value,
         )
 
     thesis_broken = (
@@ -94,6 +127,7 @@ def evaluate_exit(
                 f"({breakout_level:.2f}). The thesis that triggered this "
                 f"trade no longer holds. Closing."
             ),
+            peak_value=peak_value,
         )
 
     return ExitDecision(
@@ -105,4 +139,5 @@ def evaluate_exit(
             f"range, and price is still consistent with the original "
             f"thesis. Holding."
         ),
+        peak_value=peak_value,
     )

@@ -41,6 +41,7 @@ from src.options_selector import select_debit_spread
 from src.execution import size_position
 from src.position_manager import evaluate_exit
 from src.black_scholes import bs_price, compute_realized_volatility, synthesize_option_chain
+from src.market_regime import market_regime_ok, MARKET_REGIME_MA_DAYS
 
 STARTING_EQUITY = 100_000.0
 BACKTEST_LOOKBACK_DAYS = 730  # ~2 years of history
@@ -61,6 +62,7 @@ class BacktestPosition:
     entry_debit_per_contract: float
     entry_date: date
     breakout_level: float
+    peak_value: float
 
 
 @dataclass
@@ -93,11 +95,30 @@ def run_backtest(
     max_days_to_expiry: int = MAX_DAYS_TO_EXPIRY,
     profit_target_pct: float = None,
     stop_loss_pct: float = None,
+    trailing_stop_pct: float | None = None,
+    use_regime_filter: bool = False,
+    regime_ma_days: int = MARKET_REGIME_MA_DAYS,
+    use_naked_long: bool = False,
 ):
     """
     Run the backtest. Parameters default to the live strategy's config
     values; pass overrides (and a pre-fetched bars_by_ticker, to avoid
     re-fetching from Alpaca) to sweep parameters cheaply.
+
+    trailing_stop_pct: None (default) keeps the original flat profit
+        target. Set to test letting winners run past profit_target_pct
+        and only closing on a pullback from the peak (see
+        position_manager.evaluate_exit).
+    use_regime_filter: if True, only take call signals when SPY is above
+        its own 200-day average (src/market_regime.py). Puts are
+        unaffected (disabled separately via PUT_TRADING_ENABLED anyway).
+    use_naked_long: if True, skip the short leg entirely - buy just the
+        long call. Mathematically identical to a debit spread whose
+        short leg is worth $0, so this is implemented by zeroing out the
+        short leg's price everywhere rather than a separate code path:
+        costs more per contract (no premium collected from selling the
+        short leg) and gives up the spread's built-in defined-risk cap,
+        but removes the short strike's cap on upside.
     """
     from config.watchlist import LONG_LEG_DELTA_RANGE, SHORT_LEG_DELTA_RANGE
     from src.position_manager import PROFIT_TARGET_PCT, STOP_LOSS_PCT
@@ -154,7 +175,7 @@ def run_backtest(
             vol = float(vol.iloc[0]) if len(vol) and not pd.isna(vol.iloc[0]) else 0.20
 
             long_price = bs_price(current_price, pos.long_strike, years_left, vol, pos.direction)
-            short_price = bs_price(current_price, pos.short_strike, years_left, vol, pos.direction)
+            short_price = 0.0 if use_naked_long else bs_price(current_price, pos.short_strike, years_left, vol, pos.direction)
             current_value = (long_price - short_price) * 100
 
             if days_left <= 0:
@@ -169,8 +190,11 @@ def run_backtest(
                     breakout_level=pos.breakout_level,
                     profit_target_pct=profit_target_pct,
                     stop_loss_pct=stop_loss_pct,
+                    peak_value=pos.peak_value,
+                    trailing_stop_pct=trailing_stop_pct,
                 )
                 should_exit, reason = decision.should_exit, decision.reason
+                pos.peak_value = decision.peak_value
 
             if should_exit:
                 pnl = (current_value - pos.entry_debit_per_contract) * pos.contracts
@@ -209,6 +233,10 @@ def run_backtest(
                 continue
             if result.direction == "put" and not PUT_TRADING_ENABLED:
                 continue
+            if use_regime_filter and result.direction == "call":
+                spy_bars_so_far = bars_by_ticker["SPY"].loc[bars_by_ticker["SPY"].index.date <= current_date]
+                if not market_regime_ok(spy_bars_so_far, ma_days=regime_ma_days):
+                    continue
 
             vol = vol_by_ticker[ticker].loc[vol_by_ticker[ticker].index.date == current_date]
             vol = float(vol.iloc[0]) if len(vol) and not pd.isna(vol.iloc[0]) else 0.20
@@ -239,7 +267,7 @@ def run_backtest(
             long_price = _leg_price(
                 result.close, spread.long_leg.strike, years_left, vol, result.direction, "buy"
             )
-            short_price = _leg_price(
+            short_price = 0.0 if use_naked_long else _leg_price(
                 result.close, spread.short_leg.strike, years_left, vol, result.direction, "sell"
             )
 
@@ -265,6 +293,7 @@ def run_backtest(
                     entry_debit_per_contract=plan.est_cost_per_contract,
                     entry_date=current_date,
                     breakout_level=result.breakout_level,
+                    peak_value=plan.est_cost_per_contract,
                 )
             )
 
