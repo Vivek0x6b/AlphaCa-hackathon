@@ -29,6 +29,7 @@ from src.broker import (
     get_open_spread_count,
     get_open_debit_spreads,
     get_orphaned_option_legs,
+    get_tickers_with_any_option_exposure,
     has_pending_order,
     place_debit_spread_order,
     close_debit_spread,
@@ -156,11 +157,18 @@ def run_once():
     open_position_count = get_open_spread_count()
 
     # Tickers already carrying a position never get a second one. Checked
-    # against both our own trade record and Alpaca's real positions (a
-    # ticker can be missing from one but not the other after a bug or
-    # manual intervention), fetched fresh after check_exits() above so a
-    # position closed this run frees up its ticker again the same day.
-    already_open_tickers = set(load_open_trades()) | set(get_open_debit_spreads())
+    # against our own trade record, Alpaca's matched-pair positions, AND
+    # any option exposure on Alpaca at all (belt-and-suspenders after a
+    # real duplicate-entry incident: a messier position shape, like two
+    # different short strikes open on the same ticker after a bug, could
+    # otherwise slip past the first two checks and get entered again).
+    # Fetched fresh after check_exits() above so a position closed this
+    # run frees up its ticker again the same day.
+    already_open_tickers = (
+        set(load_open_trades())
+        | set(get_open_debit_spreads())
+        | get_tickers_with_any_option_exposure()
+    )
 
     for result in results:
         try:

@@ -119,6 +119,26 @@ def get_open_debit_spreads() -> dict[str, dict[str, Position]]:
     return {ticker: legs for ticker, legs in grouped.items() if "long" in legs and "short" in legs}
 
 
+def get_tickers_with_any_option_exposure() -> set[str]:
+    """
+    Every underlying ticker with ANY open option position at all,
+    matched pair or not.
+
+    Confirmed live: get_open_debit_spreads() (matched pairs only) and
+    even get_orphaned_option_legs() (exactly one leg) can both miss a
+    ticker that's in a messier state - e.g. two different short strikes
+    open at once after a duplicate entry. A ticker in ANY such state
+    must never be treated as free to enter again. This is a broader,
+    simpler safety net than trying to enumerate every possible position
+    shape: if Alpaca shows any option exposure on this ticker at all,
+    it's not available for a new entry, full stop.
+    """
+    client = get_trading_client()
+    positions = client.get_all_positions()
+    option_positions = [p for p in positions if p.asset_class == AssetClass.US_OPTION]
+    return {_underlying_from_occ_symbol(p.symbol) for p in option_positions}
+
+
 def has_pending_order(ticker: str) -> bool:
     """
     True if there's any still-open (unfilled) order on an option whose
