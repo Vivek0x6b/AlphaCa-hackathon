@@ -29,6 +29,7 @@ from src.broker import (
     get_open_spread_count,
     get_open_debit_spreads,
     get_orphaned_option_legs,
+    has_pending_order,
     place_debit_spread_order,
     close_debit_spread,
     close_single_leg,
@@ -76,8 +77,17 @@ def check_exits(params: dict):
                               f"retry next run.")
                     continue
 
-                # No position at all for this ticker - genuinely closed
-                # (e.g. both legs closed manually). Safe to drop.
+                if has_pending_order(ticker):
+                    # No position yet, but an order (entry or exit) for
+                    # this ticker is still unfilled - not closed, just
+                    # not filled yet. Leave it tracked.
+                    print(f"[{ticker}] no position yet, but an order is "
+                          f"still pending. Nothing to check this run.")
+                    continue
+
+                # No position and no pending order for this ticker -
+                # genuinely closed (e.g. both legs closed manually).
+                # Safe to drop.
                 remove_open_trade(ticker)
                 continue
 

@@ -119,6 +119,30 @@ def get_open_debit_spreads() -> dict[str, dict[str, Position]]:
     return {ticker: legs for ticker, legs in grouped.items() if "long" in legs and "short" in legs}
 
 
+def has_pending_order(ticker: str) -> bool:
+    """
+    True if there's any still-open (unfilled) order on an option whose
+    underlying is this ticker.
+
+    Needed because a just-placed entry order can still be sitting
+    unfilled (e.g. placed right after close, DAY order waiting for the
+    next session) when a later check runs. With zero positions open yet,
+    that looks identical to "already fully closed" unless we also check
+    for a pending order - without this, a trade that hasn't even entered
+    yet would get silently dropped from tracking.
+    """
+    from alpaca.trading.requests import GetOrdersRequest
+    from alpaca.trading.enums import QueryOrderStatus
+
+    client = get_trading_client()
+    open_orders = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN))
+    for order in open_orders:
+        symbols = [leg.symbol for leg in order.legs] if order.legs else [order.symbol]
+        if any(_underlying_from_occ_symbol(s) == ticker for s in symbols if s):
+            return True
+    return False
+
+
 def get_orphaned_option_legs() -> dict[str, Position]:
     """
     Tickers with exactly one open option leg, not a matched pair.
