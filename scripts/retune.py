@@ -50,14 +50,38 @@ CANDIDATE_STEPS = {
 EXPIRY_WINDOW_CANDIDATES = [(7, 14), (21, 35)]
 
 
+def _match_trades(baseline_trades, candidate_trades):
+    """
+    Pair up trades from two backtest runs by (ticker, entry_date), not by
+    list position.
+
+    Confirmed live: changing almost any parameter shifts total trade
+    count somewhere in a 2-year backtest (an exit-timing change ripples
+    into which later signals get taken under the position limit), so
+    pairing by list position meant baseline and candidate almost never
+    had equal length - the significance check was silently bailing out
+    on every single comparison, every day, since this job started. This
+    only pairs trades that entered on the same ticker on the same date
+    in both runs, and drops anything that doesn't appear in both -
+    smaller than either full trade list, but each pair is a genuine
+    apples-to-apples comparison instead of a coincidental index match.
+    """
+    baseline_by_key = {(t.ticker, t.entry_date): t.pnl for t in baseline_trades}
+    candidate_by_key = {(t.ticker, t.entry_date): t.pnl for t in candidate_trades}
+    common_keys = sorted(set(baseline_by_key) & set(candidate_by_key))
+    return (
+        [baseline_by_key[k] for k in common_keys],
+        [candidate_by_key[k] for k in common_keys],
+    )
+
+
 def _paired_significance(baseline_pnls: list[float], candidate_pnls: list[float]):
     """
-    Paired z-test (normal approximation) on trade-by-trade P&L differences.
-    Valid at the sample sizes this strategy actually produces (needs a
-    proper t-test for very small samples, but n>=30ish is standard
-    large-sample territory). Trades pair by list position: option-structure
-    and exit-threshold changes affect which trades fire, so the same
-    signal-fire dates are re-priced under each candidate.
+    Paired z-test (normal approximation) on trade-by-trade P&L differences,
+    for two lists already matched pair-for-pair (see _match_trades). Valid
+    at the sample sizes this strategy actually produces (needs a proper
+    t-test for very small samples, but n>=30ish is standard large-sample
+    territory).
 
     Returns (candidate_is_significantly_better, mean_diff, p_value).
     """
@@ -111,11 +135,11 @@ def run_retune():
             trial_params = dict(current_params)
             trial_params[param_key] = candidate_value
             _, trial_trades, _ = run_backtest(bars_by_ticker=bars_by_ticker, **trial_params)
-            trial_pnls = [t.pnl for t in trial_trades]
 
-            is_better, mean_diff, p_value = _paired_significance(baseline_pnls, trial_pnls)
-            print(f"  {param_key}={candidate_value}: mean diff/trade "
-                  f"${mean_diff:+.2f}, p={p_value:.3f}"
+            matched_baseline, matched_trial = _match_trades(baseline_trades, trial_trades)
+            is_better, mean_diff, p_value = _paired_significance(matched_baseline, matched_trial)
+            print(f"  {param_key}={candidate_value}: {len(matched_trial)} matched trades, "
+                  f"mean diff/trade ${mean_diff:+.2f}, p={p_value:.3f}"
                   f"{' (significant)' if is_better else ''}")
 
             if is_better and (best is None or mean_diff > best[2]):
@@ -126,11 +150,11 @@ def run_retune():
         trial_params["min_days_to_expiry"] = min_d
         trial_params["max_days_to_expiry"] = max_d
         _, trial_trades, _ = run_backtest(bars_by_ticker=bars_by_ticker, **trial_params)
-        trial_pnls = [t.pnl for t in trial_trades]
 
-        is_better, mean_diff, p_value = _paired_significance(baseline_pnls, trial_pnls)
-        print(f"  expiry_window=({min_d},{max_d}): mean diff/trade "
-              f"${mean_diff:+.2f}, p={p_value:.3f}"
+        matched_baseline, matched_trial = _match_trades(baseline_trades, trial_trades)
+        is_better, mean_diff, p_value = _paired_significance(matched_baseline, matched_trial)
+        print(f"  expiry_window=({min_d},{max_d}): {len(matched_trial)} matched trades, "
+              f"mean diff/trade ${mean_diff:+.2f}, p={p_value:.3f}"
               f"{' (significant)' if is_better else ''}")
 
         if is_better and (best is None or mean_diff > best[2]):
