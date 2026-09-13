@@ -188,6 +188,55 @@ def get_orphaned_option_legs() -> dict[str, Position]:
     return {ticker: legs[0] for ticker, legs in grouped.items() if len(legs) == 1}
 
 
+def get_all_legs_for_ticker(ticker: str) -> list[Position]:
+    """
+    Every open option position for one underlying ticker, however many
+    there are.
+
+    Unlike get_open_debit_spreads() (exactly one long + one short) or
+    get_orphaned_option_legs() (exactly one leg total), this makes no
+    assumption about shape - it's the general case, needed because a
+    duplicate-entry bug can leave a ticker with two different long
+    strikes and two different short strikes open at once. Any P&L or
+    close logic that only looks at "the" long/short leg will silently
+    use the wrong numbers (or the wrong quantity) whenever a ticker is
+    in one of these messier states - confirmed live, this is exactly
+    what caused a stop-loss close to fail with a quantity mismatch.
+    """
+    client = get_trading_client()
+    positions = client.get_all_positions()
+    return [
+        p for p in positions
+        if p.asset_class == AssetClass.US_OPTION and _underlying_from_occ_symbol(p.symbol) == ticker
+    ]
+
+
+def close_all_legs_for_ticker(ticker: str) -> bool:
+    """
+    Close every open option leg for a ticker, however many there are.
+
+    Closes all short legs first (waiting for each to actually fill),
+    then all long legs - same safety ordering as close_debit_spread(),
+    generalized to any number of legs per side instead of assuming
+    exactly one. Returns True only if every leg closed.
+    """
+    legs = get_all_legs_for_ticker(ticker)
+    shorts = [p for p in legs if p.side == PositionSide.SHORT]
+    longs = [p for p in legs if p.side == PositionSide.LONG]
+
+    for leg in shorts:
+        qty = abs(int(float(leg.qty)))
+        if not close_single_leg(leg.symbol, qty, PositionSide.SHORT):
+            return False
+
+    for leg in longs:
+        qty = abs(int(float(leg.qty)))
+        if not close_single_leg(leg.symbol, qty, PositionSide.LONG):
+            return False
+
+    return True
+
+
 def close_single_leg(symbol: str, qty: int, side: PositionSide) -> bool:
     """
     Close one standalone option leg (not part of a matched spread).

@@ -24,16 +24,17 @@ from alpaca.trading.enums import OrderStatus
 
 from config.watchlist import WATCHLIST, PUT_TRADING_ENABLED
 from src.market_data import fetch_bars, fetch_option_chain, fetch_option_quotes, fetch_stock_prices
+from alpaca.trading.enums import PositionSide
+
 from src.broker import (
     get_account_equity,
     get_open_spread_count,
     get_open_debit_spreads,
-    get_orphaned_option_legs,
+    get_all_legs_for_ticker,
     get_tickers_with_any_option_exposure,
     has_pending_order,
     place_debit_spread_order,
-    close_debit_spread,
-    close_single_leg,
+    close_all_legs_for_ticker,
 )
 from src.signals import scan_watchlist
 from src.news_veto import check_news_veto
@@ -46,38 +47,29 @@ from src.journal import log_entry
 
 
 def check_exits(params: dict):
-    """Check every open spread we have metadata for and close any that
-    should exit (profit target, stop loss, or thesis invalidation)."""
+    """Check every open position we have metadata for and close any that
+    should exit (profit target, stop loss, or thesis invalidation).
+
+    Makes no assumption about how many legs a ticker has open (normally
+    exactly one long + one short, but a duplicate-entry bug can leave
+    two of each open at once) - it aggregates whatever legs actually
+    exist into one blended entry debit and current value, and closes
+    every leg found. This replaced an earlier version that only ever
+    looked at "the" long/short leg, which silently computed the wrong
+    P&L and then failed to close (quantity mismatch) the one time a
+    ticker actually ended up with more than one leg per side."""
     open_trades = load_open_trades()
     if not open_trades:
         print("No open trades to check.")
         return
 
-    spreads = get_open_debit_spreads()
-    orphans = get_orphaned_option_legs()
     current_prices = fetch_stock_prices(list(open_trades.keys()))
 
     for ticker, meta in open_trades.items():
         try:
-            if ticker not in spreads:
-                if ticker in orphans:
-                    # A single leg is still open - the other leg's close
-                    # completed (e.g. a resting order finally filled) but
-                    # this one never went out. This is NOT "already
-                    # closed" - it's real, unmanaged risk. Close it before
-                    # dropping tracking.
-                    leg = orphans[ticker]
-                    qty = abs(int(float(leg.qty)))
-                    closed = close_single_leg(leg.symbol, qty, leg.side)
-                    if closed:
-                        remove_open_trade(ticker)
-                        print(f"[{ticker}] closed leftover leg {leg.symbol}.")
-                    else:
-                        print(f"[{ticker}] leftover leg {leg.symbol} close "
-                              f"did not fill this run; still tracked, will "
-                              f"retry next run.")
-                    continue
+            legs = get_all_legs_for_ticker(ticker)
 
+            if not legs:
                 if has_pending_order(ticker):
                     # No position yet, but an order (entry or exit) for
                     # this ticker is still unfilled - not closed, just
@@ -92,11 +84,17 @@ def check_exits(params: dict):
                 remove_open_trade(ticker)
                 continue
 
-            long_leg = spreads[ticker]["long"]
-            short_leg = spreads[ticker]["short"]
+            longs = [p for p in legs if p.side == PositionSide.LONG]
+            shorts = [p for p in legs if p.side == PositionSide.SHORT]
 
-            entry_debit = (float(long_leg.avg_entry_price) - float(short_leg.avg_entry_price)) * 100
-            current_value = (float(long_leg.current_price) - float(short_leg.current_price)) * 100
+            entry_debit = (
+                sum(float(p.avg_entry_price) * abs(float(p.qty)) * 100 for p in longs)
+                - sum(float(p.avg_entry_price) * abs(float(p.qty)) * 100 for p in shorts)
+            )
+            current_value = (
+                sum(float(p.current_price) * abs(float(p.qty)) * 100 for p in longs)
+                - sum(float(p.current_price) * abs(float(p.qty)) * 100 for p in shorts)
+            )
 
             decision = evaluate_exit(
                 ticker=ticker,
@@ -112,16 +110,15 @@ def check_exits(params: dict):
             print(f"[{ticker}] {decision.reasoning}")
 
             if decision.should_exit:
-                qty = abs(int(float(long_leg.qty)))
-                closed = close_debit_spread(long_leg.symbol, short_leg.symbol, qty)
+                closed = close_all_legs_for_ticker(ticker)
                 if closed:
                     remove_open_trade(ticker)
                     log_entry("trade_exit", decision)
-                    print(f"[{ticker}] closed both legs.")
+                    print(f"[{ticker}] closed all legs.")
                 else:
-                    print(f"[{ticker}] close did not complete this run "
-                          f"(short leg pending); still tracked as open, "
-                          f"will retry next run.")
+                    log_entry("partial_close", {"ticker": ticker})
+                    print(f"[{ticker}] close did not fully complete this "
+                          f"run; still tracked, will retry next run.")
         except Exception as exc:
             # One position's API hiccup must not stop us from checking
             # every other open position's exit conditions the same run -
