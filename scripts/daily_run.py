@@ -25,6 +25,7 @@ from alpaca.trading.requests import GetCalendarRequest
 
 from scripts.run_agent import run_once
 from scripts.retune import run_retune
+from scripts.health_check import main as run_health_check
 from src.broker import get_trading_client
 
 EASTERN = ZoneInfo("America/New_York")
@@ -60,6 +61,13 @@ def main():
     except Exception:
         traceback.print_exc()
         print(f"Trading run failed for {run_date}.")
+
+    try:
+        print(f"\nHealth check for {run_date}:")
+        run_health_check()
+    except Exception:
+        traceback.print_exc()
+        print(f"Health check itself failed for {run_date}.")
 
 
 if __name__ == "__main__":
