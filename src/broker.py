@@ -242,9 +242,19 @@ def close_single_leg(symbol: str, qty: int, side: PositionSide) -> bool:
     Close one standalone option leg (not part of a matched spread).
 
     side is the position's current side (LONG closes via SELL_TO_CLOSE,
-    SHORT closes via BUY_TO_CLOSE). Same cancel-stale-then-reprice and
-    wait-for-fill approach as close_debit_spread(), for the same reason:
-    a limit order quoted once can go stale if it doesn't fill right away.
+    SHORT closes via BUY_TO_CLOSE). Cancels any stale resting close order
+    first and reprices fresh, same reasoning as before: a limit price
+    quoted days ago can be far from the market.
+
+    Uses GTC (good-til-canceled), not DAY. Confirmed live: the daily run
+    happens at 4:15pm ET, right after the close, so a DAY close order has
+    essentially no window to fill same-day - and confirmed live, it does
+    NOT get a fresh shot at the next session's open either, it just
+    silently expires exactly at the next session boundary without ever
+    trying to fill. A position that needs to exit would sit unmanaged
+    indefinitely under DAY, only actually closing on days someone happens
+    to intervene manually during real market hours. GTC actually rests
+    through the next session instead of vanishing at the boundary.
     """
     client = get_trading_client()
     quotes = fetch_option_quotes([symbol])
@@ -263,94 +273,12 @@ def close_single_leg(symbol: str, qty: int, side: PositionSide) -> bool:
             qty=qty,
             side=order_side,
             type="limit",
-            time_in_force=TimeInForce.DAY,
+            time_in_force=TimeInForce.GTC,
             limit_price=limit_price,
             position_intent=intent,
         )
     )
     return _wait_for_fill(client, order.id)
-
-
-def close_debit_spread(long_symbol: str, short_symbol: str, qty: int) -> bool:
-    """
-    Close both legs of a debit spread by symbol.
-
-    Returns True only if both legs' close orders were actually submitted
-    (the short leg filled and the long leg's close order went out). The
-    caller must check this before treating the spread as closed - a
-    False return means the position is still open and needs rechecking
-    next run.
-
-    Uses explicit closing orders (submit_order with position_intent set)
-    rather than Alpaca's close_position() convenience method. Confirmed
-    live: close_position() fails with "account not eligible to trade
-    uncovered option contracts" even for a plain sell-to-close of a long
-    option with zero short positions anywhere in the account. It doesn't
-    tag the order's position_intent, and this account's options approval
-    level (3: spreads, not 4: uncovered) apparently needs that explicit
-    tag to recognize the order as closing rather than potentially
-    opening a naked position. Setting position_intent directly fixes it.
-
-    Closes the short leg first, then the long leg, as further defense in
-    depth (closing a short can never increase short exposure). Waits for
-    the short leg's close order to actually FILL before submitting the
-    long leg's close: confirmed live that a fixed short sleep isn't
-    enough - the short position still legitimately exists (and covers
-    the long) until that order fills, so submitting the long leg's close
-    too early gets rejected as uncovered. This matters especially outside
-    active market hours, when a resting limit order may not fill for a
-    while (or at all, until the next session).
-
-    Prices both legs to be immediately marketable (sell the long at its
-    bid, buy back the short at its ask) since an exit should execute
-    promptly rather than wait for a better price, unlike an entry.
-
-    Cancels any stale resting close order on a leg before resubmitting -
-    this function can get called again on a later run (e.g. the previous
-    attempt's short leg never filled), and a limit price quoted days ago
-    may no longer be anywhere near the market. Always cancelling and
-    repricing fresh means a stuck close order can't block forever; it
-    just gets replaced with a current, marketable one on every attempt.
-    """
-    client = get_trading_client()
-
-    quotes = fetch_option_quotes([long_symbol, short_symbol])
-    long_bid = quotes[long_symbol][0]
-    short_ask = quotes[short_symbol][1]
-
-    _cancel_open_orders(client, short_symbol)
-    short_close_order = client.submit_order(
-        LimitOrderRequest(
-            symbol=short_symbol,
-            qty=qty,
-            side=OrderSide.BUY,
-            type="limit",
-            time_in_force=TimeInForce.DAY,
-            limit_price=short_ask,
-            position_intent=PositionIntent.BUY_TO_CLOSE,
-        )
-    )
-
-    filled = _wait_for_fill(client, short_close_order.id)
-    if not filled:
-        print(f"Short leg close for {short_symbol} did not fill in time; "
-              f"leaving the long leg open rather than risk an uncovered "
-              f"rejection. It'll be retried (with a fresh price) next run.")
-        return False
-
-    _cancel_open_orders(client, long_symbol)
-    client.submit_order(
-        LimitOrderRequest(
-            symbol=long_symbol,
-            qty=qty,
-            side=OrderSide.SELL,
-            type="limit",
-            time_in_force=TimeInForce.DAY,
-            limit_price=long_bid,
-            position_intent=PositionIntent.SELL_TO_CLOSE,
-        )
-    )
-    return True
 
 
 def _cancel_open_orders(client: TradingClient, symbol: str) -> None:

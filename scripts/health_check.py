@@ -39,8 +39,13 @@ def check_scheduled_task() -> list[str]:
         issues.append(f"Could not read the scheduled task's status: {exc}")
         return issues
 
+    # 267009 (0x00041301, SCHED_S_TASK_RUNNING) shows up whenever this
+    # check runs as part of the task's own execution (e.g. called from
+    # daily_run.py) - the task is still running BECAUSE this check is
+    # running, not a failure. Only a real non-zero/non-running code
+    # means the previous run actually failed.
     last_result = info.get("LastTaskResult")
-    if last_result not in (0, None):
+    if last_result not in (0, None, 267009):
         issues.append(f"Scheduled task's last run failed (result code {last_result}).")
 
     return issues
