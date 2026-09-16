@@ -41,6 +41,8 @@ def summarize(entries: list[dict]) -> dict:
         if e["type"] == "signal_check" and e["data"]["fired"]:
             fired_tickers[e["data"]["ticker"]] = {"signal": e["data"]}
     for e in entries:
+        if e["type"] == "news_veto_check" and e["data"]["ticker"] in fired_tickers:
+            fired_tickers[e["data"]["ticker"]]["news_veto"] = e["data"]
         if e["type"] == "spread_selected" and e["data"]["ticker"] in fired_tickers:
             fired_tickers[e["data"]["ticker"]]["spread"] = e["data"]
         if e["type"] == "trade_entry" and e["data"]["spread"]["ticker"] in fired_tickers:
@@ -55,10 +57,24 @@ def summarize(entries: list[dict]) -> dict:
 
     checked_tickers = [e["data"]["ticker"] for e in entries if e["type"] == "signal_check"]
 
+    # Exit-side activity: what every currently-held position did today,
+    # separate from fired_tickers above (which is new-entry activity).
+    # Without this, a week's worth of stop-losses, holds, and failed
+    # closes would be invisible to the daily narration - only new
+    # entries would ever get told.
+    exit_checks = [e["data"] for e in entries if e["type"] == "exit_check"]
+    trade_exits = [e["data"] for e in entries if e["type"] == "trade_exit"]
+    partial_closes = [e["data"] for e in entries if e["type"] == "partial_close"]
+    ticker_errors = [e["data"] for e in entries if e["type"] == "ticker_error"]
+
     return {
         "retune": retune,
         "fired_tickers": fired_tickers,
         "checked_tickers": checked_tickers,
+        "exit_checks": exit_checks,
+        "trade_exits": trade_exits,
+        "partial_closes": partial_closes,
+        "ticker_errors": ticker_errors,
         "entry_count": len(entries),
     }
 

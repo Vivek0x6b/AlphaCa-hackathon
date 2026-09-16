@@ -73,9 +73,15 @@ cronjob(
     report a judge could read in under a minute: (1) the re-tune
     decision, if any - what changed, why, and the statistical evidence
     (or why nothing changed). (2) for each fired ticker, the full trade
-    story: what triggered the signal, the spread selected, the sizing,
-    and whether an order was placed. (3) if fired_tickers is empty, just
-    note which tickers were checked and that nothing fired.",
+    story: what triggered the signal, the news veto check's verdict, the
+    spread selected, the sizing, and whether an order was placed. (3) if
+    fired_tickers is empty, just note which tickers were checked and
+    that nothing fired. (4) for each entry in exit_checks, what happened
+    to that open position today (hold, profit target, stop loss, or
+    thesis invalidated) and its P&L. (5) if trade_exits is non-empty,
+    that position fully closed today - say so plainly. (6) if
+    partial_closes or ticker_errors is non-empty, flag it clearly as
+    something that needs a human look, not just background detail.",
   skills=["alpaca"],
   deliver="origin",
   continuity=true
