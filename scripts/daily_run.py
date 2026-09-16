@@ -27,6 +27,7 @@ from scripts.run_agent import run_once
 from scripts.retune import run_retune
 from scripts.health_check import main as run_health_check
 from src.broker import get_trading_client
+from src.equity_history import log_equity_snapshot
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -61,6 +62,14 @@ def main():
     except Exception:
         traceback.print_exc()
         print(f"Trading run failed for {run_date}.")
+
+    try:
+        equity = float(get_trading_client().get_account().equity)
+        log_equity_snapshot(equity)
+        print(f"Logged equity snapshot for {run_date}: ${equity:,.2f}")
+    except Exception:
+        traceback.print_exc()
+        print(f"Equity snapshot failed for {run_date}.")
 
     try:
         print(f"\nHealth check for {run_date}:")
