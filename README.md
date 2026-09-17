@@ -30,7 +30,11 @@ Built on Alpaca's paper trading environment. No real money is involved.
    target, stop loss, or thesis invalidation. Handles any number of open
    legs per ticker (not just a clean one-long-one-short pair), since a
    real duplicate-entry incident proved that assumption doesn't always
-   hold — see `docs/incident-log.md`.
+   hold — see `docs/incident-log.md`. Checked every 15 minutes during
+   market hours (`scripts/intraday_exit_check.py`), not just once daily —
+   a profit target hit mid-morning gets closed then, not hours later.
+   Entry signals stay on the once-daily cycle, since the breakout/trend
+   logic is genuinely defined against a confirmed daily close.
 6. **Journal** — every signal check and trade decision is logged with the
    reasoning behind it (`logs/journal.jsonl`).
 7. **Health check** — runs at the end of every cycle: confirms the
@@ -123,6 +127,7 @@ scripts/backtest.py          backtest engine against real history
 scripts/retune.py            daily autonomous re-tune job
 scripts/daily_run.py         single run, invoked by the Windows Scheduled Task
 scripts/health_check.py      end-of-cycle consistency and status check
+scripts/intraday_exit_check.py  frequent (15min) exit-only check during market hours
 scripts/daily_summary.py     structured journal extraction for Hermes narration
 docs/designs/                design docs and methodology notes
 docs/incident-log.md         real bugs found and fixed running this live

@@ -26,27 +26,31 @@ from src.trade_store import load_open_trades
 JOURNAL_PATH = Path(__file__).resolve().parent.parent / "logs" / "journal.jsonl"
 
 
+SCHEDULED_TASKS = ["AlphaCa-DailyRun", "AlphaCa-IntradayExitCheck"]
+
+
 def check_scheduled_task() -> list[str]:
     issues = []
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             "Get-ScheduledTaskInfo -TaskName 'AlphaCa-DailyRun' | ConvertTo-Json"],
-            capture_output=True, text=True, timeout=30,
-        )
-        info = json.loads(result.stdout)
-    except Exception as exc:
-        issues.append(f"Could not read the scheduled task's status: {exc}")
-        return issues
+    for task_name in SCHEDULED_TASKS:
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"Get-ScheduledTaskInfo -TaskName '{task_name}' | ConvertTo-Json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            info = json.loads(result.stdout)
+        except Exception as exc:
+            issues.append(f"Could not read {task_name}'s status: {exc}")
+            continue
 
-    # 267009 (0x00041301, SCHED_S_TASK_RUNNING) shows up whenever this
-    # check runs as part of the task's own execution (e.g. called from
-    # daily_run.py) - the task is still running BECAUSE this check is
-    # running, not a failure. Only a real non-zero/non-running code
-    # means the previous run actually failed.
-    last_result = info.get("LastTaskResult")
-    if last_result not in (0, None, 267009):
-        issues.append(f"Scheduled task's last run failed (result code {last_result}).")
+        # 267009 (0x00041301, SCHED_S_TASK_RUNNING) shows up whenever this
+        # check runs as part of the task's own execution (e.g. called from
+        # daily_run.py) - the task is still running BECAUSE this check is
+        # running, not a failure. Only a real non-zero/non-running code
+        # means the previous run actually failed.
+        last_result = info.get("LastTaskResult")
+        if last_result not in (0, None, 267009):
+            issues.append(f"{task_name}'s last run failed (result code {last_result}).")
 
     return issues
 

@@ -36,7 +36,14 @@ class SignalResult:
     relative_volume: float | None = None
 
 
-def evaluate_signal(ticker: str, bars: pd.DataFrame) -> SignalResult:
+def evaluate_signal(
+    ticker: str,
+    bars: pd.DataFrame,
+    BREAKOUT_LOOKBACK_DAYS: int = BREAKOUT_LOOKBACK_DAYS,
+    TREND_MA_DAYS: int = TREND_MA_DAYS,
+    RELATIVE_VOLUME_LOOKBACK_DAYS: int = RELATIVE_VOLUME_LOOKBACK_DAYS,
+    RELATIVE_VOLUME_MULTIPLIER: float = RELATIVE_VOLUME_MULTIPLIER,
+) -> SignalResult:
     """
     Evaluate breakout + trend + volume conditions for a single ticker.
 
@@ -48,6 +55,13 @@ def evaluate_signal(ticker: str, bars: pd.DataFrame) -> SignalResult:
         Daily OHLCV bars, oldest first, with columns:
         ['open', 'high', 'low', 'close', 'volume']. Needs at least
         max(BREAKOUT_LOOKBACK_DAYS, TREND_MA_DAYS) + 1 rows.
+    BREAKOUT_LOOKBACK_DAYS, TREND_MA_DAYS, RELATIVE_VOLUME_LOOKBACK_DAYS,
+    RELATIVE_VOLUME_MULTIPLIER: default to this module's config.watchlist
+        values (live equity behavior, unchanged). Overridable so other
+        asset classes (see scripts/crypto_backtest.py) or a backtest sweep
+        can test different values without this function silently reading
+        the wrong config - confirmed live, before this fix it always read
+        the equity config's values regardless of what a caller intended.
 
     Returns
     -------

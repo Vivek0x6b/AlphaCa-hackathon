@@ -105,6 +105,41 @@ fixed manually. Fixed by switching close orders from `DAY` to `GTC`, so
 they actually rest through the next session instead of vanishing at the
 boundary.
 
+## 2026-09-16 — crypto strategy evaluated and dropped for lack of a real edge
+
+Explored a parallel spot-crypto strategy (BTC/ETH/SOL, later widened to 13
+liquid coins) reusing the equity signal logic, backtested against real
+Alpaca crypto history (unlike options, no Black-Scholes approximation
+needed). The equity strategy's 20-day breakout window fired constantly on
+crypto's daily noise and was barely breakeven with a 15% win rate, mostly
+losing within hours to `thesis_invalidated`. Tried several genuinely
+different angles: separating fast (profit/stop) from slow (thesis
+invalidation) exit checks, an invalidation buffer, much longer breakout
+windows (55-100 days), a wider watchlist for a bigger sample, and a sweep
+of profit-target/stop-loss ratios. Every variant capped out near
+breakeven or worse - no configuration showed a real, demonstrated edge the
+way every equity-side change did. Along the way, also found and fixed a
+real bug: `evaluate_signal()` read its parameters from hardcoded
+`config.watchlist` globals instead of accepting overrides, so an early
+parameter sweep silently tested the same values five times. Decision:
+dropped the crypto strategy rather than ship something unproven, and
+redirected the actual underlying want (fast exits, not waiting for a
+once-daily check) into the equity strategy instead - see the intraday
+exit-check entry below.
+
+## 2026-09-16 — exits only ran once daily, missing intraday profit-taking
+
+The exit-check logic (profit target, stop loss, thesis invalidation) only
+ever ran once a day, at 4:15pm ET alongside the entry scan - even though
+it's based on Alpaca's live position marks and has no actual dependency on
+waiting for the day's close. A position that hit its profit target at
+11am sat open and unclosed for hours, giving back gains, purely because
+nothing checked it sooner. Added `scripts/intraday_exit_check.py` and a
+second Windows Scheduled Task running it every 15 minutes during market
+hours - entry signals stay on the once-daily cycle (the breakout/trend
+logic is genuinely defined against a confirmed daily close), but exits no
+longer wait on that same clock.
+
 ## 2026-09-15 — added a health check instead of relying on catching things by hand
 
 Every incident above was found by manually checking positions, orders, and
