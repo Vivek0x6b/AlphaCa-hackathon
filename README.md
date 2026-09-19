@@ -131,6 +131,8 @@ scripts/intraday_exit_check.py  frequent (15min) exit-only check during market h
 scripts/daily_summary.py     structured journal extraction for Hermes narration
 docs/designs/                design docs and methodology notes
 docs/incident-log.md         real bugs found and fixed running this live
+docs/trade-ledger.md         every real position taken, entry/exit/P&L
+docs/strategy-scorecard.md   every strategy change tested, adopted or rejected, with evidence
 ```
 
 ## Disclaimer
