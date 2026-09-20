@@ -14,11 +14,25 @@ choice in comments here so the thesis stays traceable.
 # (mega-cap, heavily optioned, liquid) rather than loosening the signal
 # logic itself - same validated rules, more opportunities to apply them
 # to, not a different or looser thesis.
+#
+# Revised on 2026-09-19 after a per-ticker backtest breakdown (see
+# docs/strategy-scorecard.md): NVDA and DIA were consistently the worst
+# performers, and NOT just in aggregate - both stayed bad independently
+# in each half of the 2-year backtest window (NVDA: 14.3% win rate in
+# the first half, 16.7% in the second; removing it improved BOTH halves,
+# not just the total), ruling out "one bad stretch" as the explanation.
+# Dropped both, and added XOM (energy) and JPM (financials) - genuine
+# sector diversification away from the previously all tech/index
+# watchlist, using the exact same breakout logic, not a different
+# thesis. A third candidate (UNH, healthcare) was tested and excluded:
+# real negative evidence (27.3% win rate, -$22,614 backtested). Full
+# result of this change: +32.27% -> +180.75% over the same 2-year
+# window, holding up in both independent halves (+163.36% / +35.07%,
+# each beating the prior watchlist's +47.13% / +18.48%).
 WATCHLIST = [
     "SPY",
     "QQQ",
     "AAPL",
-    "NVDA",
     "MSFT",
     "AMD",
     "TSLA",
@@ -27,7 +41,8 @@ WATCHLIST = [
     "AMZN",
     "NFLX",
     "IWM",
-    "DIA",
+    "XOM",
+    "JPM",
 ]
 
 # --- Signal parameters ---

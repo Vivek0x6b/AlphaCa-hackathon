@@ -113,6 +113,15 @@ config/watchlist.py         watchlist and signal parameters
 src/signals.py               breakout / trend / volume detection
 src/news_veto.py             LLM news-check gate on fired signals
 src/market_regime.py         market-wide trend filter (backtested, not adopted live)
+src/factors.py                candidate alpha factor library (momentum, RSI, volatility, etc.)
+src/composite_signal.py      IC-weighted multi-factor entry signal (backtested, not adopted live)
+src/atr_stops.py              ATR-adaptive exit thresholds (backtested, not adopted live)
+src/kelly_sizing.py           Kelly-criterion position sizing (backtested; open risk-vs-return question, not adopted live - see docs/strategy-scorecard.md)
+src/vol_spike_veto.py         entry veto on a short-term volatility spike (backtested, rejected)
+src/market_vol_sizing.py      market-wide volatility-regime size scaling (backtested, rejected)
+src/circuit_breaker_sizing.py  size reduction after a losing streak (backtested, no meaningful effect)
+src/conviction_sizing.py      signal-strength-scaled sizing (backtested, rejected - see docs/strategy-scorecard.md)
+scripts/factor_research.py   computes each factor's Information Coefficient against real forward returns
 src/options_selector.py      chain filtering, strike & expiry selection
 src/execution.py             position sizing, order payload
 src/position_manager.py      exit logic

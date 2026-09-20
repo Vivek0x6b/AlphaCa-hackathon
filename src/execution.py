@@ -32,10 +32,15 @@ def size_position(
     long_leg_price: float,
     short_leg_price: float,
     open_position_count: int,
+    position_size_pct: float = POSITION_SIZE_PCT,
 ) -> OrderPlan | None:
     """
     Determine contract quantity for a debit spread given account equity
     and current open position count.
+
+    position_size_pct defaults to the live config value; overridable so
+    the backtester can test alternative sizing schemes (e.g.
+    src/kelly_sizing.py) without touching live config.
 
     Returns None if the max concurrent position limit is already reached.
     """
@@ -46,7 +51,7 @@ def size_position(
     if net_debit_per_contract <= 0:
         return None
 
-    risk_budget = account_equity * POSITION_SIZE_PCT
+    risk_budget = account_equity * position_size_pct
     contracts = int(risk_budget // net_debit_per_contract)
 
     if contracts < 1:
@@ -55,7 +60,7 @@ def size_position(
     total_cost = contracts * net_debit_per_contract
 
     reasoning = (
-        f"Risking {POSITION_SIZE_PCT:.0%} of equity "
+        f"Risking {position_size_pct:.0%} of equity "
         f"(${risk_budget:,.2f}) at a net debit of "
         f"${net_debit_per_contract:,.2f}/contract -> {contracts} contract(s), "
         f"total cost ${total_cost:,.2f}. "
