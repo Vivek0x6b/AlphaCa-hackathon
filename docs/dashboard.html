@@ -1,0 +1,476 @@
+<!doctype html>
+<title>AlphaCa Ledger</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #fcfcfb;
+    --surface-1: #ffffff;
+    --surface-2: #f2f1ee;
+    --line: #e1dfd9;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #8a8983;
+    --accent: #2a78d6;
+    --accent-soft: rgba(42, 120, 214, 0.12);
+    --good: #0ca30c;
+    --good-soft: rgba(12, 163, 12, 0.10);
+    --critical: #d03b3b;
+    --critical-soft: rgba(208, 59, 59, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #14141a;
+      --surface-1: #1a1a22;
+      --surface-2: #21212a;
+      --line: #33333e;
+      --text-primary: #f6f5f2;
+      --text-secondary: #c3c2b7;
+      --text-muted: #85847c;
+      --accent: #3987e5;
+      --accent-soft: rgba(57, 135, 229, 0.16);
+      --good: #17c317;
+      --good-soft: rgba(23, 195, 23, 0.14);
+      --critical: #e35a5a;
+      --critical-soft: rgba(227, 90, 90, 0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #14141a;
+    --surface-1: #1a1a22;
+    --surface-2: #21212a;
+    --line: #33333e;
+    --text-primary: #f6f5f2;
+    --text-secondary: #c3c2b7;
+    --text-muted: #85847c;
+    --accent: #3987e5;
+    --accent-soft: rgba(57, 135, 229, 0.16);
+    --good: #17c317;
+    --good-soft: rgba(23, 195, 23, 0.14);
+    --critical: #e35a5a;
+    --critical-soft: rgba(227, 90, 90, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  body {
+    max-width: 920px;
+    margin-inline: auto;
+    padding: 2.5rem 1.5rem 5rem;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .display { font-family: "Fraunces", Georgia, serif; text-wrap: balance; }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 2.25rem;
+  }
+  .wordmark {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.375rem;
+    letter-spacing: -0.01em;
+  }
+  .wordmark span { color: var(--accent); }
+  header .sub {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  .hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 2rem;
+    margin-bottom: 2.5rem;
+  }
+  .hero .equity {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(2.75rem, 8vw, 4rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .hero .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    background: var(--good-soft);
+    color: var(--good);
+  }
+  .hero .caption {
+    width: 100%;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  section { margin-bottom: 2.75rem; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 0.75rem;
+  }
+
+  .chart-card {
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.5rem 1.5rem 1rem;
+    position: relative;
+  }
+  #chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .gridline { stroke: var(--line); stroke-width: 1; }
+  .equity-area { fill: var(--accent-soft); }
+  .equity-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end-dot { fill: var(--good); stroke: var(--surface-1); stroke-width: 2; }
+  .hover-dot { fill: var(--accent); stroke: var(--surface-1); stroke-width: 2; opacity: 0; }
+  .crosshair { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+  .axis-label { fill: var(--text-muted); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.7rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 12px));
+    white-space: nowrap;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  }
+  .tooltip .t-date { color: var(--text-muted); }
+  .tooltip .t-val { color: var(--text-primary); font-weight: 500; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .stat-tile {
+    background: var(--surface-1);
+    padding: 1.1rem 1.2rem;
+  }
+  .stat-tile .label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+  }
+  .stat-tile .value {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-tile .value.good { color: var(--good); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    font-size: 0.875rem;
+  }
+  .table-scroll { overflow-x: auto; border-radius: 14px; }
+  th, td {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 500;
+    background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
+  td.ticker { font-family: "IBM Plex Mono", monospace; font-weight: 500; }
+  .pnl { font-family: "IBM Plex Mono", monospace; font-weight: 500; }
+  .pnl.good { color: var(--good); }
+  .pnl.critical { color: var(--critical); }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+  .chip.good { background: var(--good-soft); color: var(--good); }
+  .chip.critical { background: var(--critical-soft); color: var(--critical); }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  @media (max-width: 640px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+
+<header>
+  <div class="wordmark">Alpha<span>Ca</span></div>
+  <div class="sub">paper account · live since 2026-09-02</div>
+</header>
+
+<div class="hero">
+  <div class="equity mono" id="hero-equity">$115,348.38</div>
+  <div class="delta" id="hero-delta">▲ +15.35%</div>
+  <div class="caption">Account equity, starting from $100,000.00 on 2026-09-02.</div>
+</div>
+
+<section>
+  <p class="eyebrow">Equity curve</p>
+  <div class="chart-card">
+    <svg id="chart-svg" viewBox="0 0 860 260" role="img" aria-label="Account equity over time, from $100,000 to $115,348"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Performance</p>
+  <div class="stats-grid">
+    <div class="stat-tile">
+      <div class="label">Total return</div>
+      <div class="value good">+15.35%</div>
+    </div>
+    <div class="stat-tile">
+      <div class="label">Realized P&amp;L</div>
+      <div class="value good">+$15,353</div>
+    </div>
+    <div class="stat-tile">
+      <div class="label">Win rate</div>
+      <div class="value">40%</div>
+    </div>
+    <div class="stat-tile">
+      <div class="label">Trades closed</div>
+      <div class="value">5</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Trade ledger</p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Entered</th>
+          <th>Exited</th>
+          <th class="num">Contracts</th>
+          <th class="num">Entry cost</th>
+          <th>Exit reason</th>
+          <th class="num">P&amp;L</th>
+        </tr>
+      </thead>
+      <tbody id="ledger-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  AlphaCa — autonomous momentum-breakout options strategy on Alpaca. Paper trading only.
+  Figures reconstructed from Alpaca fill history; see docs/trade-ledger.md for full notes.
+</footer>
+
+<script>
+  const equityHistory = [
+    ["2026-09-02", 99750.85],
+    ["2026-09-03", 100440.72],
+    ["2026-09-08", 98812.19],
+    ["2026-09-10", 91682.15],
+    ["2026-09-12", 91681.99],
+    ["2026-09-14", 90919.99],
+    ["2026-09-15", 92865.74],
+    ["2026-09-16", 93821.35],
+    ["2026-09-17", 97033.29],
+    ["2026-09-18", 88520.99],
+    ["2026-09-21", 115348.38]
+  ];
+
+  const trades = [
+    { ticker: "AAPL",   entered: "2026-09-02", exited: "2026-09-09", contracts: 3,  entryCost: 1719,  reason: "stop_loss",     pnl: -1137,  pct: -66  },
+    { ticker: "TSLA",   entered: "2026-09-04", exited: "2026-09-09", contracts: 2,  entryCost: 960,   reason: "stop_loss",     pnl: -50,    pct: -5   },
+    { ticker: "AMD #1", entered: "2026-09-10", exited: "2026-09-15", contracts: 10, entryCost: 12780, reason: "stop_loss",     pnl: -9280,  pct: -73  },
+    { ticker: "META",   entered: "2026-09-10", exited: "2026-09-21", contracts: 8,  entryCost: 14364, reason: "profit_target", pnl: 18652,  pct: 130  },
+    { ticker: "AMD #2", entered: "2026-09-18", exited: "2026-09-21", contracts: 4,  entryCost: 6552,  reason: "profit_target", pnl: 7168,   pct: 109  }
+  ];
+
+  const fmtUSD = (n) => (n < 0 ? "-$" : "+$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtUSDPlain = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  // --- Ledger table ---
+  const tbody = document.getElementById("ledger-body");
+  trades.forEach(t => {
+    const tr = document.createElement("tr");
+    const isGood = t.pnl > 0;
+    tr.innerHTML = `
+      <td class="ticker">${t.ticker}</td>
+      <td class="mono">${t.entered}</td>
+      <td class="mono">${t.exited}</td>
+      <td class="num">${t.contracts}</td>
+      <td class="num">${fmtUSDPlain(t.entryCost)}</td>
+      <td><span class="chip ${isGood ? 'good' : 'critical'}">${t.reason}</span></td>
+      <td class="num pnl ${isGood ? 'good' : 'critical'}">${fmtUSD(t.pnl)} (${t.pct > 0 ? '+' : ''}${t.pct}%)</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // --- Equity curve chart ---
+  const svg = document.getElementById("chart-svg");
+  const tooltip = document.getElementById("tooltip");
+  const W = 860, H = 260, padL = 54, padR = 12, padT = 16, padB = 28;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+
+  const values = equityHistory.map(d => d[1]);
+  const minV = Math.min(...values) * 0.985;
+  const maxV = Math.max(...values) * 1.015;
+  const n = equityHistory.length;
+
+  const xAt = (i) => padL + (i / (n - 1)) * plotW;
+  const yAt = (v) => padT + plotH - ((v - minV) / (maxV - minV)) * plotH;
+
+  const ns = "http://www.w3.org/2000/svg";
+  function el(tag, attrs) {
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // gridlines + axis labels (4 horizontal bands)
+  const gridSteps = 4;
+  for (let g = 0; g <= gridSteps; g++) {
+    const v = minV + (g / gridSteps) * (maxV - minV);
+    const y = yAt(v);
+    svg.appendChild(el("line", { class: "gridline", x1: padL, x2: W - padR, y1: y, y2: y }));
+    const label = el("text", { class: "axis-label", x: 4, y: y + 3 });
+    label.textContent = "$" + Math.round(v / 1000) + "k";
+    svg.appendChild(label);
+  }
+
+  // x-axis date labels (first, middle, last)
+  [0, Math.floor((n - 1) / 2), n - 1].forEach(i => {
+    const label = el("text", { class: "axis-label", x: xAt(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle" });
+    label.textContent = equityHistory[i][0].slice(5);
+    svg.appendChild(label);
+  });
+
+  // area path
+  let areaD = `M ${xAt(0)} ${yAt(values[0])}`;
+  for (let i = 1; i < n; i++) areaD += ` L ${xAt(i)} ${yAt(values[i])}`;
+  areaD += ` L ${xAt(n - 1)} ${padT + plotH} L ${xAt(0)} ${padT + plotH} Z`;
+  svg.appendChild(el("path", { class: "equity-area", d: areaD }));
+
+  // line path
+  let lineD = `M ${xAt(0)} ${yAt(values[0])}`;
+  for (let i = 1; i < n; i++) lineD += ` L ${xAt(i)} ${yAt(values[i])}`;
+  svg.appendChild(el("path", { class: "equity-line", d: lineD }));
+
+  // endpoint marker
+  svg.appendChild(el("circle", { class: "end-dot", cx: xAt(n - 1), cy: yAt(values[n - 1]), r: 5 }));
+
+  // hover layer
+  const crosshair = el("line", { class: "crosshair", x1: 0, x2: 0, y1: padT, y2: padT + plotH });
+  const hoverDot = el("circle", { class: "hover-dot", r: 5 });
+  svg.appendChild(crosshair);
+  svg.appendChild(hoverDot);
+
+  const hitArea = el("rect", { x: padL, y: padT, width: plotW, height: plotH, fill: "transparent" });
+  svg.appendChild(hitArea);
+
+  function nearestIndex(mx) {
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(xAt(i) - mx);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
+  }
+
+  function showTooltip(i, clientX, clientY) {
+    const [date, val] = equityHistory[i];
+    tooltip.innerHTML = `<span class="t-date">${date}</span><br><span class="t-val">${fmtUSDPlain(Math.round(val))}</span>`;
+    const rect = svg.getBoundingClientRect();
+    const cardRect = svg.parentElement.getBoundingClientRect();
+    tooltip.style.left = (rect.left - cardRect.left + xAt(i) * (rect.width / W)) + "px";
+    tooltip.style.top = (rect.top - cardRect.top + yAt(val) * (rect.height / H)) + "px";
+    tooltip.style.opacity = "1";
+    crosshair.setAttribute("x1", xAt(i));
+    crosshair.setAttribute("x2", xAt(i));
+    crosshair.style.opacity = "1";
+    hoverDot.setAttribute("cx", xAt(i));
+    hoverDot.setAttribute("cy", yAt(val));
+    hoverDot.style.opacity = "1";
+  }
+  function hideTooltip() {
+    tooltip.style.opacity = "0";
+    crosshair.style.opacity = "0";
+    hoverDot.style.opacity = "0";
+  }
+
+  hitArea.addEventListener("mousemove", (e) => {
+    const rect = svg.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * W;
+    showTooltip(nearestIndex(mx), e.clientX, e.clientY);
+  });
+  hitArea.addEventListener("mouseleave", hideTooltip);
+  hitArea.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    const rect = svg.getBoundingClientRect();
+    const mx = ((t.clientX - rect.left) / rect.width) * W;
+    showTooltip(nearestIndex(mx));
+  }, { passive: true });
+</script>
