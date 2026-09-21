@@ -36,18 +36,44 @@ MIN_TRADES_FOR_SIGNIFICANCE = 15
 
 SIGNIFICANCE_LEVEL = 0.05
 
-# Small neighborhood of alternatives tried around each current value, one
-# parameter at a time (all others held at their current value). Chosen to
-# match the scale of the manual sweep that found the current defaults.
-CANDIDATE_STEPS = {
-    "long_leg_delta_range": [(0.35, 0.45), (0.45, 0.55)],
-    "short_leg_delta_range": [(0.05, 0.10), (0.15, 0.20)],
-    "min_days_to_expiry": [7, 21],  # paired with max_days_to_expiry below
-    "profit_target_pct": [0.40, 0.60],
-    "stop_loss_pct": [0.40, 0.60],
-}
-# min/max expiry move together (a real window, not two independent knobs).
-EXPIRY_WINDOW_CANDIDATES = [(7, 14), (21, 35)]
+# Step sizes for exploring a small neighborhood AROUND WHATEVER THE
+# CURRENT VALUE IS, computed fresh each run - not a fixed list of
+# absolute candidates. Confirmed live: a fixed absolute candidate list
+# silently turns into a wasted no-op comparison (candidate == current,
+# guaranteed $0.00 diff) the moment a parameter's live value happens to
+# equal one of the fixed candidates - which happened from day one for
+# stop_loss_pct (its default, 0.40, was already one of its own two fixed
+# candidates) and again for short_leg_delta_range after the 2026-09-11
+# retune adopted (0.05, 0.10) - after that, the job could only ever
+# compare it to itself or revert to the OLD value it had already proven
+# worse, with no way to explore further in the direction that worked.
+# Relative steps mean every run always explores genuinely new territory,
+# regardless of how many changes have already been adopted.
+DELTA_RANGE_STEP = 0.05
+EXPIRY_WINDOW_STEP_DAYS = 7
+PCT_THRESHOLD_STEP = 0.10
+
+
+def _delta_range_candidates(current: tuple[float, float]) -> list[tuple[float, float]]:
+    low, high = current
+    candidates = [
+        (round(low - DELTA_RANGE_STEP, 2), round(high - DELTA_RANGE_STEP, 2)),
+        (round(low + DELTA_RANGE_STEP, 2), round(high + DELTA_RANGE_STEP, 2)),
+    ]
+    return [(lo, hi) for lo, hi in candidates if lo > 0 and hi > lo]
+
+
+def _pct_candidates(current: float) -> list[float]:
+    candidates = [round(current - PCT_THRESHOLD_STEP, 2), round(current + PCT_THRESHOLD_STEP, 2)]
+    return [c for c in candidates if c > 0]
+
+
+def _expiry_window_candidates(current_min: int, current_max: int) -> list[tuple[int, int]]:
+    candidates = [
+        (current_min - EXPIRY_WINDOW_STEP_DAYS, current_max - EXPIRY_WINDOW_STEP_DAYS),
+        (current_min + EXPIRY_WINDOW_STEP_DAYS, current_max + EXPIRY_WINDOW_STEP_DAYS),
+    ]
+    return [(lo, hi) for lo, hi in candidates if lo > 0 and hi > lo]
 
 
 def _match_trades(baseline_trades, candidate_trades):
@@ -128,7 +154,10 @@ def run_retune():
     best = None  # (param_key, candidate_value, mean_diff, p_value)
 
     single_value_params = {
-        k: v for k, v in CANDIDATE_STEPS.items() if k not in ("min_days_to_expiry",)
+        "long_leg_delta_range": _delta_range_candidates(current_params["long_leg_delta_range"]),
+        "short_leg_delta_range": _delta_range_candidates(current_params["short_leg_delta_range"]),
+        "profit_target_pct": _pct_candidates(current_params["profit_target_pct"]),
+        "stop_loss_pct": _pct_candidates(current_params["stop_loss_pct"]),
     }
     for param_key, candidates in single_value_params.items():
         for candidate_value in candidates:
@@ -145,7 +174,10 @@ def run_retune():
             if is_better and (best is None or mean_diff > best[2]):
                 best = (param_key, candidate_value, mean_diff, p_value)
 
-    for min_d, max_d in EXPIRY_WINDOW_CANDIDATES:
+    expiry_candidates = _expiry_window_candidates(
+        current_params["min_days_to_expiry"], current_params["max_days_to_expiry"],
+    )
+    for min_d, max_d in expiry_candidates:
         trial_params = dict(current_params)
         trial_params["min_days_to_expiry"] = min_d
         trial_params["max_days_to_expiry"] = max_d
