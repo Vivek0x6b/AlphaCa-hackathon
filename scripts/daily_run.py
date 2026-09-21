@@ -28,6 +28,7 @@ from scripts.retune import run_retune
 from scripts.health_check import main as run_health_check
 from src.broker import get_trading_client
 from src.equity_history import log_equity_snapshot
+from scripts.update_readme_dashboard import main as update_readme_dashboard
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -70,6 +71,15 @@ def main():
     except Exception:
         traceback.print_exc()
         print(f"Equity snapshot failed for {run_date}.")
+
+    try:
+        # Regenerates local files only (README badges, docs/equity_curve.png)
+        # - never runs git commands. Committing/pushing stays a manual,
+        # human-reviewed step, per the project's standing rule on git.
+        update_readme_dashboard()
+    except Exception:
+        traceback.print_exc()
+        print(f"README dashboard update failed for {run_date}.")
 
     try:
         print(f"\nHealth check for {run_date}:")

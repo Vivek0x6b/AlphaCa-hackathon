@@ -2,6 +2,24 @@
 
 An autonomous AI trading agent for Alpaca's **Options Alpha** hackathon track.
 
+<!-- PNL_DASHBOARD_START: auto-regenerated daily by scripts/update_readme_dashboard.py - do not hand-edit between these markers, it will be overwritten -->
+<p align="center">
+  <img src="https://img.shields.io/badge/return-%2B15.35%25-0ca30c?style=for-the-badge" alt="Total return +15.35%">
+  <img src="https://img.shields.io/badge/P%26L-%2B%2415%2C353-0ca30c?style=for-the-badge" alt="Realized P&L">
+  <img src="https://img.shields.io/badge/win_rate-40%25-2a78d6?style=for-the-badge" alt="Win rate 40%">
+  <img src="https://img.shields.io/badge/trades_closed-5-2a78d6?style=for-the-badge" alt="5 trades closed">
+  <img src="https://img.shields.io/badge/status-autonomous-0ca30c?style=for-the-badge" alt="Status: autonomous">
+</p>
+
+<p align="center">
+  <img src="docs/equity_curve.png" alt="AlphaCa account equity over time, currently $115,348" width="800">
+</p>
+<!-- PNL_DASHBOARD_END -->
+
+<p align="center">
+  <sub>Real paper-account equity, reconstructed from Alpaca fill history — see <a href="docs/trade-ledger.md">the full trade ledger</a> and the <a href="docs/dashboard.html">interactive dashboard</a> (download and open locally, or view live if GitHub Pages is enabled for this repo).</sub>
+</p>
+
 AlphaCa scans a watchlist for confirmed momentum breakouts, applies a trend and
 volume filter, and — when a clear thesis is confirmed — executes a defined-risk
 options debit spread through Alpaca's Trading API. Every decision (trade or no
