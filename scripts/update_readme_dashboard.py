@@ -116,6 +116,12 @@ def main():
         print("No equity history yet - skipping chart regeneration.")
         return
     _regenerate_chart(history)
+    # GitHub (and browsers) cache a raw image aggressively by URL - since
+    # the filename never changes, a stale cached copy can keep showing
+    # even after the file itself is updated and pushed. A version query
+    # param tied to the latest date in the data forces a fresh fetch
+    # whenever that data actually changes.
+    chart_version = history[-1]["date"]
 
     return_color = GOOD.lstrip("#") if total_return_pct >= 0 else "d03b3b"
     realized_pnl = ledger_stats["realized_pnl"]
@@ -132,7 +138,7 @@ def main():
 </p>
 
 <p align="center">
-  <img src="docs/equity_curve.png" alt="AlphaCa account equity over time, currently ${equity:,.0f}" width="800">
+  <img src="docs/equity_curve.png?v={chart_version}" alt="AlphaCa account equity over time, currently ${equity:,.0f}" width="800">
 </p>
 {MARKER_END}"""
 
