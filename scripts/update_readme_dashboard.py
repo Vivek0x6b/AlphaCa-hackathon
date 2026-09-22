@@ -126,14 +126,17 @@ def main():
     chart_version = f"{history[-1]['date']}-{round(history[-1]['equity'])}"
 
     return_color = GOOD.lstrip("#") if total_return_pct >= 0 else "d03b3b"
-    realized_pnl = ledger_stats["realized_pnl"]
-    pnl_color = GOOD.lstrip("#") if realized_pnl >= 0 else "d03b3b"
-    pnl_message = f"{'+' if realized_pnl >= 0 else '-'}${abs(realized_pnl):,.0f}"
+    # Total P&L (closed trades plus open positions), matching what Alpaca's
+    # own portfolio view shows. A closed-trades-only figure read as wrong
+    # next to Alpaca's number whenever positions were open.
+    total_pnl = equity - STARTING_EQUITY
+    pnl_color = GOOD.lstrip("#") if total_pnl >= 0 else "d03b3b"
+    pnl_message = f"{'+' if total_pnl >= 0 else '-'}${abs(total_pnl):,.0f}"
 
     block = f"""{MARKER_START}: auto-regenerated daily by scripts/update_readme_dashboard.py - do not hand-edit between these markers, it will be overwritten -->
 <p align="center">
   <img src="{_badge_url('return', f'{total_return_pct:+.2f}%', return_color)}" alt="Total return {total_return_pct:+.2f}%">
-  <img src="{_badge_url('P&L', pnl_message, pnl_color)}" alt="Realized P&L">
+  <img src="{_badge_url('P&L', pnl_message, pnl_color)}" alt="Total P&L">
   <img src="{_badge_url('win rate', f'{ledger_stats["win_rate"]:.0%}', ACCENT.lstrip('#'))}" alt="Win rate {ledger_stats['win_rate']:.0%}">
   <img src="{_badge_url('trades closed', str(ledger_stats['trades_closed']), ACCENT.lstrip('#'))}" alt="{ledger_stats['trades_closed']} trades closed">
   <img src="{_badge_url('status', 'autonomous', GOOD.lstrip('#'))}" alt="Status: autonomous">

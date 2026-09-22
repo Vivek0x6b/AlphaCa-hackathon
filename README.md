@@ -5,7 +5,7 @@ An autonomous AI trading agent for Alpaca's **Options Alpha** hackathon track.
 <!-- PNL_DASHBOARD_START: auto-regenerated daily by scripts/update_readme_dashboard.py - do not hand-edit between these markers, it will be overwritten -->
 <p align="center">
   <img src="https://img.shields.io/badge/return-%2B17.85%25-0ca30c?style=for-the-badge" alt="Total return +17.85%">
-  <img src="https://img.shields.io/badge/P%26L-%2B%2415%2C353-0ca30c?style=for-the-badge" alt="Realized P&L">
+  <img src="https://img.shields.io/badge/P%26L-%2B%2417%2C847-0ca30c?style=for-the-badge" alt="Total P&L">
   <img src="https://img.shields.io/badge/win_rate-40%25-2a78d6?style=for-the-badge" alt="Win rate 40%">
   <img src="https://img.shields.io/badge/trades_closed-5-2a78d6?style=for-the-badge" alt="5 trades closed">
   <img src="https://img.shields.io/badge/status-autonomous-0ca30c?style=for-the-badge" alt="Status: autonomous">
