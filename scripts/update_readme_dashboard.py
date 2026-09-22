@@ -119,9 +119,11 @@ def main():
     # GitHub (and browsers) cache a raw image aggressively by URL - since
     # the filename never changes, a stale cached copy can keep showing
     # even after the file itself is updated and pushed. A version query
-    # param tied to the latest date in the data forces a fresh fetch
-    # whenever that data actually changes.
-    chart_version = history[-1]["date"]
+    # param tied to the latest data point forces a fresh fetch whenever
+    # that data actually changes. Includes the equity value, not just the
+    # date: a midday snapshot and the closing snapshot share a date, and
+    # a date-only version left GitHub serving the midday chart after close.
+    chart_version = f"{history[-1]['date']}-{round(history[-1]['equity'])}"
 
     return_color = GOOD.lstrip("#") if total_return_pct >= 0 else "d03b3b"
     realized_pnl = ledger_stats["realized_pnl"]

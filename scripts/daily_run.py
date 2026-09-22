@@ -41,6 +41,48 @@ def is_trading_day(date) -> bool:
     return len(calendar) > 0
 
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Only these generated files are ever auto-committed. Anything else in the
+# working tree (code mid-edit, local notes) stays out of automatic commits.
+DASHBOARD_FILES = ["README.md", "docs/equity_curve.png"]
+
+
+def publish_dashboard(run_date) -> None:
+    """Commit and push the regenerated dashboard files after the daily run,
+    so GitHub shows the closing numbers without a manual push each day."""
+    import os
+    import subprocess
+
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=REPO_ROOT, env=env,
+            capture_output=True, text=True, timeout=120,
+        )
+
+    git("add", "--", *DASHBOARD_FILES)
+    if git("diff", "--cached", "--quiet", "--", *DASHBOARD_FILES).returncode == 0:
+        print("Dashboard unchanged, nothing to publish.")
+        return
+
+    message = (
+        f"Daily dashboard update for {run_date}\n\n"
+        "Automated commit from scripts/daily_run.py after the market-close run."
+    )
+    commit = git("commit", "-m", message, "--", *DASHBOARD_FILES)
+    if commit.returncode != 0:
+        print(f"Dashboard commit failed: {commit.stderr.strip()}")
+        return
+
+    push = git("push")
+    if push.returncode != 0:
+        print(f"Dashboard push failed: {push.stderr.strip()}")
+        return
+    print(f"Published dashboard for {run_date} to GitHub.")
+
+
 def main():
     run_date = datetime.now(EASTERN).date()
 
@@ -73,10 +115,8 @@ def main():
         print(f"Equity snapshot failed for {run_date}.")
 
     try:
-        # Regenerates local files only (README badges, docs/equity_curve.png)
-        # - never runs git commands. Committing/pushing stays a manual,
-        # human-reviewed step, per the project's standing rule on git.
         update_readme_dashboard()
+        publish_dashboard(run_date)
     except Exception:
         traceback.print_exc()
         print(f"README dashboard update failed for {run_date}.")
