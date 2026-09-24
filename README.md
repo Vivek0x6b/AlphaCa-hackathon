@@ -77,10 +77,25 @@ options since Alpaca has no historical option chain data; see
   watchlist tickers independently — not a fluke in one name.
 - **Puts are disabled** (`PUT_TRADING_ENABLED = False`) as a result. They
   still fire and get journaled for transparency, just aren't traded.
-- The calls-only version backtests at **+32.27%** over the same ~2-year
-  window (138 trades, 40.6% win rate), after tuning the short leg's delta
-  range, stop-loss threshold, and watchlist/volume-threshold based on
-  statistically significant backtested improvements.
+- The calls-only version is profitable over the same ~2-year window, but
+  the headline return is not a reliable measure of the edge. As of
+  2026-09-23 the backtest shows **+293%** (141 trades, 46% win rate), and
+  three things inflate that number:
+  - **It rests on a few trades.** The 5 best trades produce 85% of the
+    profit. The other 136 trades together made **+$44.5k** — still
+    positive, and a more honest picture of the typical result.
+  - **It moves with the calendar.** Two of those 5 trades are the live
+    META and AMD winners from mid-September. Moving the window forward
+    4 days to include them took the result from +181% to +293%.
+  - **The watchlist was picked using the same data it's scored on.**
+    NVDA and DIA were dropped (2026-09-19) because they lost money in this
+    same history. The old watchlist scores +89% on the same data today.
+    Whether the swap helps on future trades is unknown until it's
+    measured on data it never saw.
+
+  Sizing at 8% of a growing account compounds all of this: the same trade
+  is 7 contracts in one run and 15 in another. See
+  `docs/strategy-scorecard.md` for the full breakdown.
 
 A daily autonomous re-tune job (`scripts/retune.py`) re-runs the backtest on
 the expanding dataset and only adopts a parameter change when it clears a

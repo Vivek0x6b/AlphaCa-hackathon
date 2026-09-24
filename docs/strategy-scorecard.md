@@ -37,6 +37,7 @@ project should be able to show its failures as clearly as its successes.
 | Market-wide (SPY realized-vol percentile) position-size scaling - reduce size in high market-vol regimes, increase in calm ones, adapted from arXiv:2508.16598 / arXiv:2407.13908's VIX-percentile sizing | Clean, honest rejection this time - the relationship was smooth and monotonic across every multiplier range tested (mult range narrowing toward 1x/no-adjustment climbed steadily from -7.14% up through +3.92%, +10.61%, +17.22%, +23.06% toward the fixed-size baseline's +32.27%), confirming this is a real, coherent "doesn't help" rather than a fragile fluke like the entry-cap idea above. Notable: three different volatility-based ideas (per-ticker, as an entry driver / exit scaler / entry veto) and now a market-wide version (as a size scaler) have all been tested and all failed - a consistent pattern across very different mechanisms, not one unlucky implementation. | 2026-09-19 |
 | Circuit-breaker sizing (shrink size after N consecutive losses, the other half of arXiv:2604.27150 not covered by the ATR-stops test) | Essentially a wash: best case (streak=3, reduction=0.25) reached +34.58%, barely above baseline's +32.27% on a ~138-trade sample - well within noise. More aggressive triggers (streak=1-2, or a bigger size cut) clearly hurt, in a coherent, monotonic way. Read as a real (if minor) finding in its own right: this strategy's wins/losses don't show meaningful streakiness worth exploiting. | 2026-09-19 |
 | Conviction sizing (scale position size continuously by the fired signal's relative-volume strength, informed by the entry-cap experiment's finding that relative volume carries real information) | Passed the adjacent-parameter check (smooth, monotonic scaling from baseline +32.27% up to +78.97% as the multiplier range widened, with two exact sanity-check reproductions of baseline at the no-adjustment setting) but FAILED the split-half check: the entire improvement came from the first half of history (+47.13% -> +103.68%), while the second half moved in the OPPOSITE direction (+18.48% -> +8.13%, worse as the effect strengthened). A real edge should hold its direction in both independent halves even if the magnitude differs; this doesn't - it's a first-half-specific artifact (likely a handful of large high-relative-volume winners concentrated there), not a structural relationship. A useful demonstration that the adjacent-parameter check and the split-half check catch DIFFERENT failure modes - this idea would have been wrongly adopted if only the first check had been run. | 2026-09-19 |
+| Limit on correlated open positions (skip a new signal if N or more already-open positions have a trailing 60-day daily-return correlation above a threshold with it). Prompted by 2026-09-23 live: QQQ, AMD and META were all open and fell together, -4.3% equity in one day. Unlike the same-day entry cap above, this compares against positions already open from any earlier day. | Consistent across all 6 settings tested, not a fragile fluke: every one earned less than no limit (+176% to +293% vs +293%), and NONE reduced max drawdown (28.3-28.8% vs 28.5%). Only the single worst trade shrank (-$14.8k vs -$20.2k). It costs return without cutting the risk it was meant to cut. | 2026-09-23 |
 
 ## A genuine methodological finding, worth keeping even though rejected
 
@@ -118,3 +119,21 @@ default), separate from the purely evidence-losing experiments above.
   approximation, not real historical option fills.
 - Live sample size is still small (4 real positions as of 2026-09-17) -
   not enough to independently validate the backtest's ~44% win rate yet.
+- **The headline backtest return is dominated by a few trades and was
+  partly chosen with hindsight** (investigated 2026-09-23, when it read
+  +293%). The 5 best trades out of 141 produce 85% of the profit; the
+  other 136 made +$44.5k combined. Two of those 5 are the live mid-
+  September META/AMD winners, so moving the window forward 4 days took
+  the result from +181% to +293%. The 2026-09-19 watchlist swap (drop
+  NVDA/DIA, add XOM/JPM) was chosen and scored on the same history - the
+  old watchlist reads +89% on today's data - so its split-half check was
+  not independent: both halves had already informed the choice. Rule for
+  future watchlist or parameter changes: choose on older data, score on
+  a later stretch the choice never saw.
+- **Position sizing is a return-vs-drawdown choice, not a bug** (sweep on
+  2026-09-23, same 141 trades and 46% win rate at every size): 3% ->
+  +80% return / 11% max drawdown, 5% -> +157% / 18%, 8% (live) -> +293%
+  / 28.5%. Drawdown grows roughly in step with return, so no size is
+  "wrong"; 8% means accepting a roughly 28% peak-to-trough drop. These
+  dollar figures inherit the inflation described above, so they
+  overstate both columns. Undecided.

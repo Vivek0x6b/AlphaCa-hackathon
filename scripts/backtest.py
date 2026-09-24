@@ -176,6 +176,10 @@ def run_backtest(
     use_conviction_sizing: bool = False,
     conviction_min_multiplier: float = 0.75,
     conviction_max_multiplier: float = 1.5,
+    max_correlated_open: int | None = None,
+    correlation_threshold: float = 0.7,
+    correlation_window_days: int = 60,
+    position_size_pct_override: float | None = None,
 ):
     """
     Run the backtest. Parameters default to the live strategy's config
@@ -402,6 +406,25 @@ def run_backtest(
                 if vetoed:
                     continue
 
+            # max_correlated_open: unlike max_new_entries_per_day (same-day
+            # candidates only), this compares a new signal against positions
+            # already open from any earlier day - the 2026-09-23 live case,
+            # where QQQ entered on top of already-open AMD and META and all
+            # three fell together. Correlation uses trailing daily returns
+            # up to today only, so no future data leaks in.
+            if max_correlated_open is not None and open_positions:
+                window = correlation_window_days
+                cand_returns = df["close"].loc[df.index.date <= current_date].pct_change().tail(window)
+                correlated = 0
+                for pos in open_positions:
+                    other = bars_by_ticker[pos.ticker]
+                    other_returns = other["close"].loc[other.index.date <= current_date].pct_change().tail(window)
+                    joined = pd.concat([cand_returns, other_returns], axis=1, join="inner").dropna()
+                    if len(joined) >= window // 2 and joined.iloc[:, 0].corr(joined.iloc[:, 1]) > correlation_threshold:
+                        correlated += 1
+                if correlated >= max_correlated_open:
+                    continue
+
             vol = vol_by_ticker[ticker].loc[vol_by_ticker[ticker].index.date == current_date]
             vol = float(vol.iloc[0]) if len(vol) and not pd.isna(vol.iloc[0]) else 0.20
 
@@ -449,6 +472,8 @@ def run_backtest(
                 position_size_pct = kelly.position_size_pct
             else:
                 position_size_pct = POSITION_SIZE_PCT
+            if position_size_pct_override is not None:
+                position_size_pct = position_size_pct_override
 
             if use_market_vol_sizing and "SPY" in bars_by_ticker:
                 spy_bars_so_far = bars_by_ticker["SPY"].loc[bars_by_ticker["SPY"].index.date <= current_date]
