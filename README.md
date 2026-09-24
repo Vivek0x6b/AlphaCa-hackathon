@@ -4,15 +4,15 @@ An autonomous AI trading agent for Alpaca's **Options Alpha** hackathon track.
 
 <!-- PNL_DASHBOARD_START: auto-regenerated daily by scripts/update_readme_dashboard.py - do not hand-edit between these markers, it will be overwritten -->
 <p align="center">
-  <img src="https://img.shields.io/badge/return-%2B13.41%25-0ca30c?style=for-the-badge" alt="Total return +13.41%">
-  <img src="https://img.shields.io/badge/P%26L-%2B%2413%2C408-0ca30c?style=for-the-badge" alt="Total P&L">
+  <img src="https://img.shields.io/badge/return-%2B18.99%25-0ca30c?style=for-the-badge" alt="Total return +18.99%">
+  <img src="https://img.shields.io/badge/P%26L-%2B%2418%2C990-0ca30c?style=for-the-badge" alt="Total P&L">
   <img src="https://img.shields.io/badge/win_rate-40%25-2a78d6?style=for-the-badge" alt="Win rate 40%">
   <img src="https://img.shields.io/badge/trades_closed-5-2a78d6?style=for-the-badge" alt="5 trades closed">
   <img src="https://img.shields.io/badge/status-autonomous-0ca30c?style=for-the-badge" alt="Status: autonomous">
 </p>
 
 <p align="center">
-  <img src="docs/equity_curve.png?v=2026-09-23-113408" alt="AlphaCa account equity over time, currently $113,408" width="800">
+  <img src="docs/equity_curve.png?v=2026-09-24-118990" alt="AlphaCa account equity over time, currently $118,990" width="800">
 </p>
 <!-- PNL_DASHBOARD_END -->
 
