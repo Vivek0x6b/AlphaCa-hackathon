@@ -83,7 +83,7 @@ def fetch_bars(
     return bars_by_ticker
 
 
-def _parse_occ_symbol(symbol: str) -> tuple[date, Literal["call", "put"], float]:
+def parse_occ_symbol(symbol: str) -> tuple[date, Literal["call", "put"], float]:
     """
     Break an OCC option symbol into (expiration_date, option_type, strike).
 
@@ -132,7 +132,7 @@ def fetch_option_chain(
     for symbol, snapshot in chain.items():
         if snapshot.greeks is None or snapshot.greeks.delta is None:
             continue
-        expiry, option_type, strike = _parse_occ_symbol(symbol)
+        expiry, option_type, strike = parse_occ_symbol(symbol)
         contracts.append(
             {
                 "symbol": symbol,

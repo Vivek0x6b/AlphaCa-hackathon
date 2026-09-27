@@ -149,3 +149,25 @@ confirms the scheduled task's last run actually succeeded, cross-checks
 locally tracked trades against Alpaca's real account state for drift, and
 surfaces any unresolved `ticker_error` or `partial_close` entries from that
 day's journal.
+
+## 2026-09-26 — spreads had no rule for expiration day
+
+Found in a pre-week review, before it ever triggered. The exit logic only
+knew three reasons to close: profit target, stop loss, thesis invalidation.
+Nothing looked at the expiration date. A spread finishing expiration day
+between its stop and target would simply stay open through the 4pm expiry
+with its long leg in the money - and get auto-exercised into a stock
+position far larger than the account. The live QQQ 745/780 spread (11
+contracts, expiring 2026-10-05) was exposed to exactly this if QQQ closed
+that day roughly between $749 and $756: 1,100 shares, ~$825k, on a ~$117k
+account. The AMD 635/760 spread (expiring 2026-10-09) had the same exposure
+roughly between $648 and $666. No earlier trade had been held to expiry,
+which is why it never showed up. The backtest never had this problem: it
+settles an expiring spread at its expiration-day value, the real behavior
+the live loop was missing. Fixed by adding an `expiry_close` exit: on
+expiration day, from 2pm ET, `check_exits()` closes any spread still open,
+giving the 15-minute intraday check eight chances to fill before the
+close. Target, stop and invalidation still take priority when they also
+apply. Verified by running the live exit loop against the real open
+positions with the clock set to 2026-10-05 and orders stubbed out: holds at
+13:45, closes QQQ only at 14:00, leaves AMD until its own expiry day.

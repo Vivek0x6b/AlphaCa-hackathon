@@ -79,6 +79,11 @@ LONG_LEG_DELTA_RANGE = (0.40, 0.50)
 # continues. Improved the calls-only backtest from +3.09% to +4.07% over
 # the same 2-year window and 39 trades; a swept delta/expiry range of
 # alternatives around this one all underperformed it.
+#
+# This is only the starting default. The daily re-tune job has since
+# adopted (0.05, 0.10) (2026-09-11, see docs/strategy-scorecard.md), and
+# the live value is stored in data/strategy_params.json - the live loop,
+# backtest and re-tune job all read it from there, not from here.
 SHORT_LEG_DELTA_RANGE = (0.10, 0.15)
 
 # Expiration window (calendar days out).

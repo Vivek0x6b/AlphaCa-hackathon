@@ -574,5 +574,10 @@ def print_summary(final_equity, closed_trades, open_positions):
 
 
 if __name__ == "__main__":
-    final_equity, closed_trades, open_positions = run_backtest()
+    # Run against the live tuned parameters (data/strategy_params.json),
+    # the same ones the live loop and re-tune job use - not run_backtest()'s
+    # config-file defaults, which predate the re-tune job's adoptions.
+    from src.strategy_params import load_params
+
+    final_equity, closed_trades, open_positions = run_backtest(**load_params())
     print_summary(final_equity, closed_trades, open_positions)

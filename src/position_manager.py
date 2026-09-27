@@ -1,9 +1,10 @@
 """
 Position management: exit conditions for open debit spreads.
 
-Checks each open position against a profit target, a stop loss, and
+Checks each open position against a profit target, a stop loss,
 thesis invalidation (price falls back through the original breakout
-level). Pure logic in, decision plus reasoning out. Actual closing of
+level), and expiration day (close before the long leg can be
+auto-exercised). Pure logic in, decision plus reasoning out. Actual closing of
 positions happens through Alpaca's close_position / cancel_order tools,
 called from the agent loop or execution layer.
 """
@@ -12,6 +13,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 # Exit thresholds, expressed as a fraction of the original net debit paid.
+# These are only the fallback defaults - the live loop, backtest and
+# re-tune job all pass the current tuned values from
+# data/strategy_params.json (src/strategy_params.py), which is where the
+# live numbers actually live.
 PROFIT_TARGET_PCT = 0.50  # close at +50% of debit paid
 STOP_LOSS_PCT = 0.50      # close at -50% of debit paid
 
@@ -20,7 +25,7 @@ STOP_LOSS_PCT = 0.50      # close at -50% of debit paid
 class ExitDecision:
     symbol_group: str  # ticker or spread identifier
     should_exit: bool
-    reason: Literal["profit_target", "trailing_stop", "stop_loss", "thesis_invalidated", "hold", None]
+    reason: Literal["profit_target", "trailing_stop", "stop_loss", "thesis_invalidated", "expiry_close", "hold", None]
     reasoning: str
     peak_value: float = 0.0  # highest current_value seen since entry, for trailing-stop tracking
 
@@ -36,6 +41,7 @@ def evaluate_exit(
     stop_loss_pct: float = STOP_LOSS_PCT,
     peak_value: float | None = None,
     trailing_stop_pct: float | None = None,
+    expiring_today: bool = False,
 ) -> ExitDecision:
     """
     Decide whether an open spread position should be closed.
@@ -65,6 +71,13 @@ def evaluate_exit(
         closed if it pulls back this fraction from its peak. None (the
         default) keeps the original behavior: close immediately at
         profit_target_pct, no trailing.
+    expiring_today: True when the spread expires today and the caller
+        wants it closed before expiry. A spread finishing between its
+        stop and its target would otherwise ride into expiration with
+        the long leg in the money and get auto-exercised into a stock
+        position far larger than the account (e.g. 11 QQQ contracts =
+        1,100 shares). Checked last, so a target/stop/invalidation that
+        also applies still gets reported as the reason.
     """
     peak_value = max(peak_value if peak_value is not None else entry_debit, current_value)
     pnl_pct = (current_value - entry_debit) / entry_debit if entry_debit else 0.0
@@ -126,6 +139,19 @@ def evaluate_exit(
                 f"through the original breakout level "
                 f"({breakout_level:.2f}). The thesis that triggered this "
                 f"trade no longer holds. Closing."
+            ),
+            peak_value=peak_value,
+        )
+
+    if expiring_today:
+        return ExitDecision(
+            symbol_group=ticker,
+            should_exit=True,
+            reason="expiry_close",
+            reasoning=(
+                f"{ticker} spread expires today with P/L at {pnl_pct:+.0%}, "
+                f"between its stop and target. Closing at market value "
+                f"rather than letting the long leg be auto-exercised."
             ),
             peak_value=peak_value,
         )

@@ -16,14 +16,22 @@ step.
 """
 
 import sys
+from datetime import datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from alpaca.trading.enums import OrderStatus
 
 from config.watchlist import WATCHLIST, PUT_TRADING_ENABLED
-from src.market_data import fetch_bars, fetch_option_chain, fetch_option_quotes, fetch_stock_prices
+from src.market_data import (
+    fetch_bars,
+    fetch_option_chain,
+    fetch_option_quotes,
+    fetch_stock_prices,
+    parse_occ_symbol,
+)
 from alpaca.trading.enums import PositionSide
 
 from src.broker import (
@@ -45,6 +53,15 @@ from src.trade_store import load_open_trades, save_open_trade, remove_open_trade
 from src.strategy_params import load_params
 from src.journal import log_entry
 
+EASTERN = ZoneInfo("America/New_York")
+
+# On expiration day, spreads still open from this time on are closed
+# regardless of P/L (see evaluate_exit's expiring_today). 2pm ET leaves
+# the 15-minute intraday check several chances to get the close filled
+# before the 4pm expiry, and gets ahead of the broker's own late-day
+# handling of expiring in-the-money options.
+EXPIRY_CLOSE_TIME_ET = time(14, 0)
+
 
 def check_exits(params: dict):
     """Check every open position we have metadata for and close any that
@@ -64,6 +81,7 @@ def check_exits(params: dict):
         return
 
     current_prices = fetch_stock_prices(list(open_trades.keys()))
+    now_et = datetime.now(EASTERN)
 
     for ticker, meta in open_trades.items():
         try:
@@ -96,6 +114,14 @@ def check_exits(params: dict):
                 - sum(float(p.current_price) * abs(float(p.qty)) * 100 for p in shorts)
             )
 
+            # Earliest expiry across all legs - if any leg expires today,
+            # the whole position is closed together.
+            nearest_expiry = min(parse_occ_symbol(p.symbol)[0] for p in legs)
+            expiring_today = (
+                nearest_expiry <= now_et.date()
+                and now_et.time() >= EXPIRY_CLOSE_TIME_ET
+            )
+
             decision = evaluate_exit(
                 ticker=ticker,
                 direction=meta["direction"],
@@ -105,6 +131,7 @@ def check_exits(params: dict):
                 breakout_level=meta["breakout_level"],
                 profit_target_pct=params["profit_target_pct"],
                 stop_loss_pct=params["stop_loss_pct"],
+                expiring_today=expiring_today,
             )
             log_entry("exit_check", decision)
             print(f"[{ticker}] {decision.reasoning}")
