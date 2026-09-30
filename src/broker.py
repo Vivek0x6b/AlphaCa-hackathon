@@ -211,40 +211,143 @@ def get_all_legs_for_ticker(ticker: str) -> list[Position]:
     ]
 
 
+# How a close is worked within a single exit-check run. Confirmed live
+# 2026-09-28: each leg got one limit order at the quoted bid/ask and 30
+# seconds to fill, and if it didn't, nothing retried until the next
+# 15-minute check. QQQ's stop fired at -41% but took three runs (30
+# minutes) to fully close while the market kept falling, finishing at
+# -50%. Now each run re-quotes and re-submits a few times, conceding a
+# little more on price each attempt, before leaving it to the next run.
+CLOSE_ATTEMPTS = 4
+CLOSE_FILL_WAIT_SECONDS = 15
+# Price concession added per attempt: this fraction of the current
+# bid/ask width, never less than $0.05. Attempt 0 is the plain quote.
+CLOSE_CONCESSION_WIDTH_FRACTION = 0.25
+CLOSE_MIN_CONCESSION = 0.05
+
+
+def _concession(attempt: int, width: float) -> float:
+    return attempt * max(CLOSE_MIN_CONCESSION, CLOSE_CONCESSION_WIDTH_FRACTION * width)
+
+
 def close_all_legs_for_ticker(ticker: str) -> bool:
     """
     Close every open option leg for a ticker, however many there are.
 
-    Closes all short legs first (waiting for each to actually fill),
-    then all long legs - same safety ordering as close_debit_spread(),
-    generalized to any number of legs per side instead of assuming
-    exactly one. Returns True only if every leg closed.
+    A clean spread (one long symbol, one short symbol, same quantity) is
+    first closed as a single multi-leg order, so both legs fill together
+    and the position is never left half-closed. Alpaca can refuse a
+    multi-leg close ("mleg uncovered short contracts not allowed" is a
+    known response), and anything messier than a clean pair can't be
+    sent that way at all - in both cases, and if the combined order
+    doesn't fill, it falls back to closing leg by leg: all short legs
+    first (waiting for each to fill), then all long legs, so a long leg
+    is never sold while its short leg is still open. Returns True only
+    if every leg closed.
     """
     legs = get_all_legs_for_ticker(ticker)
     shorts = [p for p in legs if p.side == PositionSide.SHORT]
     longs = [p for p in legs if p.side == PositionSide.LONG]
 
+    if (
+        len(longs) == 1
+        and len(shorts) == 1
+        and abs(int(float(longs[0].qty))) == abs(int(float(shorts[0].qty)))
+    ):
+        if _close_spread_as_combo(longs[0].symbol, shorts[0].symbol, abs(int(float(longs[0].qty)))):
+            return True
+        # Re-read what's actually still open - the combined order may
+        # have partly filled before it was canceled.
+        legs = get_all_legs_for_ticker(ticker)
+        shorts = [p for p in legs if p.side == PositionSide.SHORT]
+        longs = [p for p in legs if p.side == PositionSide.LONG]
+
     for leg in shorts:
-        qty = abs(int(float(leg.qty)))
-        if not close_single_leg(leg.symbol, qty, PositionSide.SHORT):
+        if not close_single_leg(leg.symbol, PositionSide.SHORT):
             return False
 
     for leg in longs:
-        qty = abs(int(float(leg.qty)))
-        if not close_single_leg(leg.symbol, qty, PositionSide.LONG):
+        if not close_single_leg(leg.symbol, PositionSide.LONG):
             return False
 
     return True
 
 
-def close_single_leg(symbol: str, qty: int, side: PositionSide) -> bool:
+def _close_spread_as_combo(long_symbol: str, short_symbol: str, qty: int) -> bool:
     """
-    Close one standalone option leg (not part of a matched spread).
+    Close a long/short pair as one multi-leg order for a net credit.
+
+    Alpaca's multi-leg limit price is signed: positive is a debit paid,
+    negative a credit received - so selling the spread for $3.50 is a
+    limit of -3.50. Returns True if it fully filled. Returns False if it
+    was rejected (the caller falls back to single legs) or still hadn't
+    filled after every attempt; nothing is left resting either way.
+    """
+    from alpaca.common.exceptions import APIError
+    from alpaca.trading.enums import OrderStatus
+
+    client = get_trading_client()
+    for attempt in range(CLOSE_ATTEMPTS):
+        quotes = fetch_option_quotes([long_symbol, short_symbol])
+        long_bid, long_ask = quotes[long_symbol]
+        short_bid, short_ask = quotes[short_symbol]
+        natural_credit = long_bid - short_ask
+        width = (long_ask - long_bid) + (short_ask - short_bid)
+        credit = max(0.01, round(natural_credit - _concession(attempt, width), 2))
+
+        try:
+            order = client.submit_order(
+                LimitOrderRequest(
+                    qty=qty,
+                    order_class=OrderClass.MLEG,
+                    time_in_force=TimeInForce.DAY,
+                    limit_price=-credit,
+                    legs=[
+                        OptionLegRequest(
+                            symbol=long_symbol,
+                            ratio_qty=1,
+                            side=OrderSide.SELL,
+                            position_intent=PositionIntent.SELL_TO_CLOSE,
+                        ),
+                        OptionLegRequest(
+                            symbol=short_symbol,
+                            ratio_qty=1,
+                            side=OrderSide.BUY,
+                            position_intent=PositionIntent.BUY_TO_CLOSE,
+                        ),
+                    ],
+                )
+            )
+        except APIError as exc:
+            print(f"multi-leg close rejected, falling back to single legs: {exc}")
+            return False
+
+        final = _wait_for_order(client, order.id, CLOSE_FILL_WAIT_SECONDS)
+        if final.status == OrderStatus.FILLED:
+            return True
+        if final.status == OrderStatus.REJECTED:
+            print("multi-leg close rejected, falling back to single legs.")
+            return False
+        _cancel_and_confirm(client, order.id)
+        if float(final.filled_qty or 0) > 0 or _order_filled_after_cancel(client, order.id):
+            # Partly (or, at the last moment, fully) filled - hand what's
+            # left to the single-leg path, which re-reads the real
+            # remaining quantities and returns at once if nothing is left.
+            return False
+
+    return False
+
+
+def close_single_leg(symbol: str, side: PositionSide) -> bool:
+    """
+    Close one option leg, making several priced attempts this run.
 
     side is the position's current side (LONG closes via SELL_TO_CLOSE,
-    SHORT closes via BUY_TO_CLOSE). Cancels any stale resting close order
-    first and reprices fresh, same reasoning as before: a limit price
-    quoted days ago can be far from the market.
+    SHORT closes via BUY_TO_CLOSE). Each attempt cancels any resting close
+    order, re-reads the quantity still open (so a partial fill can never
+    turn into over-closing, which would open a new position the other
+    way), re-quotes, and prices a little further through the quote than
+    the last attempt.
 
     Uses GTC (good-til-canceled), not DAY. Confirmed live: the daily run
     happens at 4:15pm ET, right after the close, so a DAY close order has
@@ -254,31 +357,74 @@ def close_single_leg(symbol: str, qty: int, side: PositionSide) -> bool:
     trying to fill. A position that needs to exit would sit unmanaged
     indefinitely under DAY, only actually closing on days someone happens
     to intervene manually during real market hours. GTC actually rests
-    through the next session instead of vanishing at the boundary.
+    through the next session instead of vanishing at the boundary - the
+    last attempt's order is deliberately left resting for that reason.
     """
+    from alpaca.trading.enums import OrderStatus
+
     client = get_trading_client()
-    quotes = fetch_option_quotes([symbol])
-    bid, ask = quotes[symbol]
+    for attempt in range(CLOSE_ATTEMPTS):
+        _cancel_open_orders(client, symbol)
+        qty = _open_qty(client, symbol)
+        if qty == 0:
+            return True
 
-    _cancel_open_orders(client, symbol)
+        bid, ask = fetch_option_quotes([symbol])[symbol]
+        concession = _concession(attempt, ask - bid)
+        if side == PositionSide.LONG:
+            order_side, intent = OrderSide.SELL, PositionIntent.SELL_TO_CLOSE
+            limit_price = max(0.01, round(bid - concession, 2))
+        else:
+            order_side, intent = OrderSide.BUY, PositionIntent.BUY_TO_CLOSE
+            limit_price = round(ask + concession, 2)
 
-    if side == PositionSide.LONG:
-        order_side, limit_price, intent = OrderSide.SELL, bid, PositionIntent.SELL_TO_CLOSE
-    else:
-        order_side, limit_price, intent = OrderSide.BUY, ask, PositionIntent.BUY_TO_CLOSE
-
-    order = client.submit_order(
-        LimitOrderRequest(
-            symbol=symbol,
-            qty=qty,
-            side=order_side,
-            type="limit",
-            time_in_force=TimeInForce.GTC,
-            limit_price=limit_price,
-            position_intent=intent,
+        order = client.submit_order(
+            LimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=order_side,
+                type="limit",
+                time_in_force=TimeInForce.GTC,
+                limit_price=limit_price,
+                position_intent=intent,
+            )
         )
-    )
-    return _wait_for_fill(client, order.id)
+        final = _wait_for_order(client, order.id, CLOSE_FILL_WAIT_SECONDS)
+        if final.status == OrderStatus.FILLED:
+            return True
+
+    return False
+
+
+def _open_qty(client: TradingClient, symbol: str) -> int:
+    """Contracts still open on this symbol, 0 if the position is gone."""
+    for position in client.get_all_positions():
+        if position.symbol == symbol:
+            return abs(int(float(position.qty)))
+    return 0
+
+
+def _cancel_and_confirm(client: TradingClient, order_id, timeout_seconds: int = 10) -> None:
+    """Cancel an order and wait until Alpaca reports it finished, so
+    positions read afterwards reflect any last-moment fill."""
+    from alpaca.trading.enums import OrderStatus
+
+    try:
+        client.cancel_order_by_id(order_id)
+    except Exception:
+        pass  # already filled or canceled - the wait below settles which
+    done = (OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED)
+    waited = 0.0
+    while waited < timeout_seconds:
+        if client.get_order_by_id(order_id).status in done:
+            return
+        time.sleep(1)
+        waited += 1
+
+
+def _order_filled_after_cancel(client: TradingClient, order_id) -> bool:
+    order = client.get_order_by_id(order_id)
+    return float(order.filled_qty or 0) > 0
 
 
 def _cancel_open_orders(client: TradingClient, symbol: str) -> None:
@@ -292,17 +438,16 @@ def _cancel_open_orders(client: TradingClient, symbol: str) -> None:
         client.cancel_order_by_id(order.id)
 
 
-def _wait_for_fill(client: TradingClient, order_id, timeout_seconds: int = 30, poll_seconds: int = 2) -> bool:
-    """Poll an order until it's filled or the timeout elapses."""
+def _wait_for_order(client: TradingClient, order_id, timeout_seconds: int, poll_seconds: int = 2) -> Order:
+    """Poll an order until it's filled, finished, or the timeout elapses,
+    and return its latest state."""
     from alpaca.trading.enums import OrderStatus
 
+    done = (OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED)
     waited = 0.0
-    while waited < timeout_seconds:
+    while True:
         order = client.get_order_by_id(order_id)
-        if order.status == OrderStatus.FILLED:
-            return True
-        if order.status in (OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED):
-            return False
+        if order.status in done or waited >= timeout_seconds:
+            return order
         time.sleep(poll_seconds)
         waited += poll_seconds
-    return False

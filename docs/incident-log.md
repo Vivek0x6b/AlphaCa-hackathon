@@ -171,3 +171,27 @@ close. Target, stop and invalidation still take priority when they also
 apply. Verified by running the live exit loop against the real open
 positions with the clock set to 2026-10-05 and orders stubbed out: holds at
 13:45, closes QQQ only at 14:00, leaves AMD until its own expiry day.
+
+## 2026-09-28 — a stop loss took 30 minutes to close, costing ~9 points of loss
+
+QQQ's stop fired at 9:50am ET at -41%. Closing a spread meant one limit
+order per leg at the quoted bid/ask, each given 30 seconds to fill, short
+leg first. When an order didn't fill in that window, nothing retried until
+the next 15-minute check: the short leg's buy-back missed at 9:50, filled
+at 10:05; the long leg's sale then missed at 10:05 and filled at 10:20.
+Meanwhile QQQ kept falling and the spread closed at -50% (-$3,861) instead
+of about -41% - roughly $680 lost to the close mechanics alone. AMD's stop
+the same morning also took two runs. Fixed in `src/broker.py`: a clean
+spread is now first closed as one multi-leg order (both legs fill together,
+never half-closed), and every close - combined or per leg - makes four
+attempts within the same run, re-quoting each time and conceding a little
+more on price each attempt (a quarter of the bid/ask width, minimum $0.05).
+Alpaca is known to refuse some multi-leg closes ("mleg uncovered short
+contracts not allowed"), so a rejected or unfilled combined order falls
+back to the per-leg path, which now re-reads the quantity still open on
+every attempt so a partial fill can never turn into over-closing.
+Verified against a simulated account (combined fill, API rejection,
+never-filling orders, partial fills on both paths, a duplicate-leg
+position): all eight cases end flat or correctly retry next run. The
+combined close hasn't run against the real Alpaca API yet - the next live
+exit is its first real test, with the per-leg fallback as the safety net.
