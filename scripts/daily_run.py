@@ -28,6 +28,7 @@ from scripts.retune import run_retune
 from scripts.health_check import main as run_health_check
 from src.broker import get_trading_client
 from src.equity_history import log_equity_snapshot
+from src.news_brief import run_news_brief
 from scripts.update_readme_dashboard import main as update_readme_dashboard
 
 EASTERN = ZoneInfo("America/New_York")
@@ -105,6 +106,13 @@ def main():
     except Exception:
         traceback.print_exc()
         print(f"Trading run failed for {run_date}.")
+
+    try:
+        print(f"\nNemotron news brief for {run_date}...")
+        run_news_brief(run_date)
+    except Exception:
+        traceback.print_exc()
+        print(f"News brief failed for {run_date}.")
 
     try:
         equity = float(get_trading_client().get_account().equity)

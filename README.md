@@ -145,6 +145,7 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets
 config/watchlist.py         watchlist and signal parameters
 src/signals.py               breakout / trend / volume detection
 src/news_veto.py             LLM news-check gate on fired signals
+src/news_brief.py            daily Nemotron market brief across the whole watchlist (analysis only, never trades)
 src/market_regime.py         market-wide trend filter (backtested, not adopted live)
 src/factors.py                candidate alpha factor library (momentum, RSI, volatility, etc.)
 src/composite_signal.py      IC-weighted multi-factor entry signal (backtested, not adopted live)

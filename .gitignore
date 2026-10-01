@@ -36,6 +36,7 @@ ENV/
 # --- Logs & runtime data ---
 logs/*.log
 logs/*.jsonl
+logs/news_briefs/
 !logs/.gitkeep
 data/*.json
 !data/.gitkeep
