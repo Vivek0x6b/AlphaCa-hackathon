@@ -12,7 +12,7 @@ An autonomous AI trading agent for Alpaca's **Options Alpha** hackathon track.
 </p>
 
 <p align="center">
-  <img src="docs/equity_curve.png?v=2026-10-01-109781" alt="AlphaCa account equity over time, currently $109,781" width="800">
+  <img src="docs/equity_curve.png?v=2026-10-02-109781" alt="AlphaCa account equity over time, currently $109,781" width="800">
 </p>
 <!-- PNL_DASHBOARD_END -->
 
